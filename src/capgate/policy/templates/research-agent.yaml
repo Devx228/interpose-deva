@@ -1,0 +1,12 @@
+agent: research-agent
+can:
+  - read:web
+  - read:docs.company.public
+cannot:
+  - read:secrets
+  - exec:shell
+  - send:email.external
+  - write:database.production
+requires_approval:
+  - create:github_issue
+  - send:slack

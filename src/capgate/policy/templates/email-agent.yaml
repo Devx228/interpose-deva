@@ -1,0 +1,10 @@
+agent: email-agent
+can:
+  - read:email.inbox
+  - send:email.internal
+cannot:
+  - read:secrets
+  - exec:shell
+  - write:database.*
+requires_approval:
+  - send:email.external

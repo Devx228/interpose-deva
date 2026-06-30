@@ -1,0 +1,13 @@
+agent: coding-agent
+can:
+  - read:repository.*
+  - write:repository.workspace
+  - exec:tests
+cannot:
+  - read:secrets
+  - write:repository.protected
+  - exec:deployment
+  - send:network.external
+requires_approval:
+  - create:pull_request
+  - exec:package_install

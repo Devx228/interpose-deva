@@ -1,0 +1,6 @@
+agent: offline-demo
+can:
+  - read:private
+  - send:external
+cannot: []
+requires_approval: []

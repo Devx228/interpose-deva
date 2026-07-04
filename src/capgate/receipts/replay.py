@@ -49,6 +49,8 @@ def replay_session(
 ) -> ReplayReport:
     store = JsonlReceiptStore(receipt_log)
     receipts = tuple(store.iter_receipts(session_id))
+    if not receipts:
+        raise ValueError("receipt session is absent or empty")
     verify_receipt_chain(receipts, verifier)
     return ReplayReport(session_id=session_id, receipts=receipts)
 

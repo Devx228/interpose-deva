@@ -1,0 +1,15 @@
+tools:
+  read_private:
+    capability: read:private
+    confidentiality: secret
+    integrity: untrusted
+    risk_class: trusted_direct
+    source_tags: [tool_result]
+    sink: none
+  send_external:
+    capability: send:external
+    confidentiality: public
+    integrity: untrusted
+    risk_class: trusted_direct
+    source_tags: [tool_result]
+    sink: network.external

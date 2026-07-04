@@ -1,18 +1,114 @@
-# capgate
+# CapGate
 
-`capgate` is a capability-secure agent runtime under staged development. It runs as a
-line-delimited stdio JSON-RPC MCP proxy, enforces explicit capability and data-flow policy, and
-records signed, hash-chained receipts for intercepted tool calls. The current Stage 2 slice also
-pins MCP tool definitions, rejects process-local tool shadowing, and fail-closes risky execution
-unless the exact required sandbox backend is injected.
+[![CI](https://github.com/Devx228/interpose-deva/actions/workflows/ci.yml/badge.svg)](https://github.com/Devx228/interpose-deva/actions/workflows/ci.yml)
 
-The gVisor, Firecracker, egress, and resource-control code is currently interface- and
-fake-runner-tested only. No production runner or privileged Linux conformance result exists, so
-this repository does not yet claim real process, network, filesystem, or VM isolation.
+CapGate is a Python security mediator for MCP tool calls. It assumes an AI agent may be
+prompt-injected or otherwise compromised, then deterministically limits what that agent can do
+through capability policy, information-flow labels, source-to-sink rules, sandbox routing, and
+signed audit receipts.
 
-Stage 3 currently includes a provider-independent dual-model quarantine boundary, an offline
-adaptive-report validator, and a dependency-free LangGraph call-translation seam. These are tested
-contracts, not live provider, adaptive-attack, or framework-integration claims.
+> **Current scope:** v0.1 is a research prototype with locally verified controls. It is not a
+> production security boundary. Representative AgentDojo ASR, adaptive robustness, and real Linux
+> sandbox isolation are **not yet measured or established**.
+
+## Why this exists
+
+Prompt injection becomes dangerous when untrusted content can steer an agent that also has private
+data and powerful tools. CapGate treats model output as untrusted control input. Authorization is
+performed in ordinary code at the tool boundary instead of asking another model whether a prompt
+looks malicious.
+
+The design is grounded in capability security and information-flow-control work including
+[AgentDojo](https://arxiv.org/abs/2406.13352),
+[CaMeL](https://arxiv.org/abs/2503.18813),
+[Fides](https://arxiv.org/abs/2505.23643), and
+[Progent](https://arxiv.org/abs/2504.11703). Published results from those projects are research
+context, not CapGate results.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Agent or MCP client] -->|JSON-RPC| P[CapGate stdio proxy]
+    P --> V[Validate request and accepted tool catalog]
+    V --> C[Capability policy]
+    C --> T[Taint and source-to-sink rules]
+    T --> R[Risk-class routing]
+    R -->|trusted direct| D[Downstream MCP server]
+    R -->|fixed risky| G[gVisor contract]
+    R -->|generated code| F[Firecracker contract]
+    V --> Q[Signed receipt]
+    C --> Q
+    T --> Q
+    R --> Q
+    D --> Q
+    G --> Q
+    F --> Q
+    Q --> L[Hash-chained JSONL audit log and replay]
+```
+
+Secure mode mediates `tools/list` and `tools/call`, forwards only a small allowlist of MCP control
+methods, and blocks unmediated resource, prompt, sampling, and custom methods. See the exact trust
+boundary and residual risks in the [security model](docs/SECURITY_MODEL.md).
+
+## Run the offline security demo
+
+This is the fastest way to evaluate the project. After dependencies are installed, demo execution
+requires no API key, `.env`, network access, gVisor, or Firecracker.
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+python examples/offline_demo/run.py
+```
+
+The one-line JSON result proves, through the real CLI proxy path, that:
+
+- `tools/list` and a private read are allowed;
+- the private result is labeled secret and untrusted;
+- a later external send is blocked by `flow.lethal_trifecta` before it reaches the server;
+- three Ed25519-signed, hash-chained receipts replay successfully;
+- the raw private marker is absent from the receipt log;
+- a changed tool definition is blocked after restart by the persistent pin; and
+- modifying a retained receipt makes replay fail signature verification.
+
+The output explicitly labels itself as offline deterministic control validation—not AgentDojo ASR
+or production-isolation evidence. All state is created in a temporary directory and removed.
+
+## What is backed today
+
+Local verification on 2026-07-04 used Python 3.14.5:
+
+| Area | Evidence | Honest status |
+|---|---|---|
+| Capability and flow decisions | Policy, pipeline, exfiltration regression, and offline demo tests | Locally verified |
+| MCP protocol boundary | Strict request/response shape and ID checks; accepted catalog required in secure mode | Locally verified |
+| Tool poisoning/rug pull | SQLite first-seen pins survive proxy restart; changed definitions block | Locally verified with trust-on-first-use limits |
+| Audit integrity | Exact receipt schemas, strict Ed25519 material, chaining, replay, tamper tests | Locally verified for retained logs |
+| Egress, budgets, gVisor, Firecracker | Pure contracts and injected fake runners | Contract-tested only |
+| Dual-model quarantine | Tool-less extractor and opaque-reference boundary | Unit-tested boundary only |
+| LangGraph | Dependency-free translation seam | Not a working framework integration |
+| AgentDojo security performance | No representative paired run | **NOT YET MEASURED** |
+| Adaptive robustness | Evidence validator only; no campaign | **NOT YET MEASURED** |
+
+The current local suite passes **358 tests**, Ruff, and strict mypy. CI repeats the checks on the
+minimum supported Python 3.11 and Python 3.14, then runs the offline demo. The workflow's first
+remote result will appear after these changes are pushed.
+
+## Core security properties
+
+- **Deny by default:** unknown tools, missing metadata, malformed messages, undiscovered tools,
+  unmediated methods, and decision failures do not execute in secure mode.
+- **Capability precedence:** explicit deny → approval required → explicit allow → default deny.
+- **Monotonic provenance:** label joins cannot lower confidentiality, restore integrity, or remove
+  source tags.
+- **Source-to-sink containment:** private data with untrusted influence cannot reach configured
+  external sinks.
+- **No sandbox downgrade:** risky classes require their exact backend; missing or failed execution
+  blocks rather than falling back to the host.
+- **Payload-minimized audit:** receipts contain hashes and decision metadata, not raw arguments or
+  results.
 
 ## Install for development
 
@@ -22,77 +118,36 @@ python3 -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-## Run checks
+Install the pinned, locally validated AgentDojo environment only when working on benchmark code:
+
+```bash
+python -m pip install -e ".[dev,bench]"
+```
+
+Run all local checks:
 
 ```bash
 ruff check .
-mypy --strict src tests
-pytest
+mypy --strict src tests examples
+pytest -q
+python examples/offline_demo/run.py
 ```
-
-## Run AgentDojo
-
-Put credentials in `.env` using `.env.example` as the template. Do not commit `.env`.
-For OCI/OpenAI-compatible access, set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and one of
-the available OCI model IDs such as `oci/openai.gpt-5.4-mini`.
-
-```bash
-.venv/bin/python bench/agentdojo_runner.py \
-  --mode undefended \
-  --pipeline agentdojo \
-  --model "${CAPGATE_AGENTDOJO_MODEL:-oci/openai.gpt-5.4-mini}" \
-  --suite workspace \
-  --benchmark-version v1.2.2 \
-  --user-task user_task_0 \
-  --injection-task injection_task_0 \
-  --out bench/reports/agentdojo-baseline-smoke.json
-```
-
-For a local smoke test that exercises AgentDojo without an external LLM:
-
-```bash
-.venv/bin/python bench/agentdojo_runner.py \
-  --mode undefended \
-  --pipeline ground-truth \
-  --attack none \
-  --suite workspace \
-  --benchmark-version v1.2.2 \
-  --user-task user_task_0 \
-  --out bench/reports/agentdojo-groundtruth-smoke.json
-```
-
-Use `--mode capgate` to mediate AgentDojo's native Python tool runtime. CapGate delegates the
-tool call unchanged, writes a signed receipt, and replay-verifies every receipt before reporting.
-The report identifies this benchmark-only path as `agentdojo-runtime`; it is not an MCP transport
-claim. CapGate runs bypass AgentDojo's result cache so current receipts always back the numbers.
-Add `--enforcement stage1` to enable the current deterministic source-to-sink rule; the default is
-`stage0` pass-through for baseline comparisons.
 
 ## Run the proxy
+
+Secure mode requires both a capability policy and tool-security metadata:
 
 ```bash
 capgate proxy \
   --receipt-log .capgate/receipts.jsonl \
   --tool-pin-db .capgate/tool-pins.sqlite3 \
+  --policy-file examples/offline_demo/policy.yaml \
+  --tool-metadata-file examples/offline_demo/tool-metadata.yaml \
+  --server-name my-mcp-server \
   --downstream python path/to/downstream_mcp_server.py
 ```
 
-The SQLite pin database atomically persists each server/tool description+schema hash across proxy
-restarts. A changed definition or unavailable/corrupt pin store fails closed; re-approval tooling
-is not implemented yet.
-
-Without security configuration, the proxy remains Stage 0 pass-through. Enable the current Stage 1
-capability and flow pipeline by supplying both files:
-
-```bash
-capgate proxy \
-  --policy-file src/capgate/policy/templates/research-agent.yaml \
-  --tool-metadata-file path/to/tool-metadata.yaml \
-  --downstream python path/to/downstream_mcp_server.py
-```
-
-Tool metadata is strict YAML. Every callable tool needs an explicit capability, result label, and
-trusted risk classification:
+Every callable tool needs an explicit capability, result label, risk class, and sink classification:
 
 ```yaml
 tools:
@@ -105,33 +160,74 @@ tools:
     sink: none
 ```
 
-Valid risk classes are `trusted_direct`, `fixed_risky`, and `generated_code`. Direct execution is
-never inferred from a missing value. `fixed_risky` requires gVisor and `generated_code` requires
-Firecracker; because the stock CLI does not yet configure a production sandbox runner/profile,
-those two classes currently BLOCK rather than falling back to the downstream host process.
+Risk classes are `trusted_direct`, `fixed_risky`, and `generated_code`. A missing or unknown class
+blocks. `fixed_risky` routes only to gVisor and `generated_code` only to Firecracker. The stock CLI
+does not yet configure production sandbox executors, so risky calls block rather than downgrading.
 
-Supplying only one configuration file, malformed metadata, an unknown tool, or a capability not
-allowed by policy fails closed.
+Starting the proxy without policy and metadata keeps the Stage 0 pass-through path for debugging
+and baseline measurement. That mode is not a security control.
 
 ## Replay receipts
 
 ```bash
-capgate replay <session-id> --receipt-log .capgate/receipts.jsonl
+capgate replay <session-id> \
+  --receipt-log .capgate/receipts.jsonl \
+  --public-key-file .capgate/ed25519.public
 ```
 
-Receipt v2 keeps arguments/results hashed and signs optional structured sandbox backend, outcome,
-and image-digest metadata. Replay verifies the chain and prints those audit fields when present.
+Replay verifies receipt sequence, previous hashes, version-specific schemas, and signatures. It
+detects mutation of retained entries; without an external anchor it cannot prove that a log tail was
+not deleted or that both the log and key were not replaced.
 
-## Validate adaptive evidence
+## AgentDojo evaluation
 
-`bench/adaptive.py` compares only already-produced paired reports carrying explicit
-`attacker-moves-second` provenance, a non-empty matching code revision, compatible case identity,
-finite ASR/utility evidence, and replay-verified CapGate mediation. Static or incomplete reports
-exit with `NOT YET MEASURED` and do not create an output file.
+The fully offline ground-truth path checks benchmark wiring and receipt coverage, not attack
+resistance:
 
 ```bash
-.venv/bin/python bench/adaptive.py \
-  --control path/to/adaptive-control.json \
-  --capgate path/to/adaptive-capgate.json \
-  --out bench/reports/adaptive-comparison.json
+python bench/agentdojo_runner.py \
+  --mode capgate \
+  --enforcement stage1 \
+  --pipeline ground-truth \
+  --attack none \
+  --suite workspace \
+  --benchmark-version v1.2.2 \
+  --user-task user_task_0 \
+  --force-rerun \
+  --out /tmp/capgate-groundtruth.json
 ```
+
+External-model runs read credentials only in the AgentDojo model path. Put them in an untracked
+`.env` using `.env.example`; never commit the file. Reports record the exact command, AgentDojo
+version, and a Git revision only when the nonignored Git worktree is clean. Ignored local files and
+the wider run environment are not captured. See the
+[report validity manifest](bench/reports/README.md) before quoting any number.
+
+## Learn and review the project
+
+- [AI-agent security learning path](docs/LEARNING_PATH.md) — nine code-linked modules, exercises,
+  mastery questions, and an interview teach-back.
+- [Security model](docs/SECURITY_MODEL.md) — assets, attacker, TCB, invariants, claim matrix, and
+  residual risks.
+- [Current build status](STATUS.md) — real implementation, measurement blockers, and next steps.
+- [Stage 1 taint design](spec-docs/STAGE1_TAINT_DESIGN.md) and
+  [Stage 2 isolation design](docs/design-notes/STAGE2_ISOLATION.md).
+- [Security reporting policy](SECURITY.md).
+
+## Explicit nonclaims
+
+CapGate does not currently claim:
+
+- prompt-injection prevention or model alignment;
+- representative AgentDojo ASR reduction or utility preservation;
+- robustness under adaptive attack;
+- real process, filesystem, syscall, network, or VM isolation;
+- a production sandbox runner or egress broker;
+- a live dual-model provider flow;
+- working LangGraph, OpenAI Agents SDK, or Pydantic AI integrations; or
+- production readiness or formally proven end-to-end security.
+
+## License
+
+No license has been selected yet. Do not assume permission to copy, modify, or redistribute this
+repository until the owner chooses and adds one.

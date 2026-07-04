@@ -29,6 +29,25 @@ _SANDBOX_STATUSES = {
     "execution_failed",
     "response_invalid",
 }
+_RECEIPT_FIELDS = frozenset(
+    {
+        "v",
+        "session_id",
+        "seq",
+        "ts",
+        "server",
+        "tool",
+        "verdict",
+        "rule_id",
+        "reason",
+        "taint_labels",
+        "args_hash",
+        "result_hash",
+        "prev_receipt_hash",
+        "signature",
+    }
+)
+_V2_RECEIPT_FIELDS = (_RECEIPT_FIELDS, _RECEIPT_FIELDS | {"sandbox"})
 
 
 @dataclass(frozen=True)
@@ -117,15 +136,19 @@ class Receipt:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Receipt:
-        labels = data.get("taint_labels", [])
-        if not isinstance(labels, list) or not all(isinstance(item, str) for item in labels):
-            raise ValueError("taint_labels must be a list of strings")
-        version = _as_int(data["v"], "v")
+        version = _as_int(data.get("v"), "v")
         if version not in {1, 2}:
             raise ValueError("receipt version is unsupported")
+        fields = frozenset(data)
+        if version == 1 and fields != _RECEIPT_FIELDS:
+            raise ValueError("receipt v1 fields do not match the required schema")
+        if version == 2 and fields not in _V2_RECEIPT_FIELDS:
+            raise ValueError("receipt v2 fields do not match the required schema")
+
+        labels = data["taint_labels"]
+        if not isinstance(labels, list) or not all(isinstance(item, str) for item in labels):
+            raise ValueError("taint_labels must be a list of strings")
         sandbox = SandboxAudit.from_dict(data["sandbox"]) if "sandbox" in data else None
-        if version == 1 and sandbox is not None:
-            raise ValueError("receipt v1 cannot contain sandbox audit metadata")
         return cls(
             v=version,
             session_id=_as_str(data["session_id"], "session_id"),
@@ -134,17 +157,17 @@ class Receipt:
             server=_as_str(data["server"], "server"),
             tool=_as_str(data["tool"], "tool"),
             verdict=_as_verdict(data["verdict"]),
-            rule_id=_as_optional_str(data.get("rule_id"), "rule_id"),
+            rule_id=_as_optional_str(data["rule_id"], "rule_id"),
             reason=_as_str(data["reason"], "reason"),
             taint_labels=tuple(labels),
             args_hash=_as_str(data["args_hash"], "args_hash"),
             result_hash=_as_str(data["result_hash"], "result_hash"),
             prev_receipt_hash=_as_optional_str(
-                data.get("prev_receipt_hash"),
+                data["prev_receipt_hash"],
                 "prev_receipt_hash",
             ),
             sandbox=sandbox,
-            signature=_as_optional_str(data.get("signature"), "signature"),
+            signature=_as_optional_str(data["signature"], "signature"),
         )
 
     def canonical_unsigned_bytes(self) -> bytes:

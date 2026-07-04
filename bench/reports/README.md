@@ -1,30 +1,53 @@
-# Benchmark report validity
+# Benchmark report manifest
 
-AgentDojo's `security_results` booleans mean that the injection succeeded. CapGate reports ASR as
-the mean of those values.
+AgentDojo `security_results` booleans mean that an injection succeeded. CapGate therefore computes
+ASR as their arithmetic mean, not `1 - mean`.
 
-Reports generated before the ASR correction on 2026-06-29 inverted this metric and are invalid for
-security comparisons. The following historical smoke files are retained only as debugging artifacts:
+None of the 16 checked-in JSON reports has a non-null code revision: two explicitly store
+`code_revision=null`, and fourteen older reports omit the field. None supports a representative
+ASR, representative utility, defense-effect, or adaptive-robustness claim. The current runner
+records a revision only when Git HEAD exists and the nonignored Git worktree is clean; missing Git,
+an unborn HEAD, or any staged, unstaged, nonignored untracked, or submodule change leaves the
+revision null. Ignored local files and the wider run environment are not captured by this field.
+
+## Current command/version-backed offline utility wiring only (2)
+
+These retain their command and AgentDojo `0.1.35` version. Each covers one ground-truth utility
+case, one allowed mediated/replay-verified call, no security case, and no ASR. The routing filename
+marks a code checkpoint; it is not evidence of real Stage 2 sandbox isolation.
+
+- `agentdojo-groundtruth-capgate-policy-20260630.json`
+- `agentdojo-groundtruth-capgate-stage2-routing-20260630.json`
+
+## Historical corrected one-case pair with no defense delta (2)
+
+This pair uses the corrected ASR meaning, but both files report ASR `0.0` and utility `1.0` for one
+case, while the Stage 1 run blocked zero calls. Producing commands, dependency versions, and code
+revisions were not retained, so the pair is wiring history rather than defense evidence.
+
+- `agentdojo-oci-mini-corrected-control.json`
+- `agentdojo-oci-mini-corrected-stage1.json`
+
+## Pre-ASR-correction files invalid for security comparison (4)
+
+These reports inverted AgentDojo's security-result meaning. They are retained only as historical
+debugging artifacts; their ASR fields must not be used.
 
 - `agentdojo-oci-mini-smoke.json`
 - `agentdojo-oci-mini-capgate-smoke.json`
 - `agentdojo-oci-mini-capgate-mediated-smoke.json`
 - `agentdojo-oci-mini-stage1-labels-smoke.json`
 
-Use `agentdojo-oci-mini-corrected-control.json` and
-`agentdojo-oci-mini-corrected-stage1.json` for the current paired one-case smoke result. A one-case
-smoke is wiring evidence, not a representative ASR claim.
+## Unpaired exploratory and legacy smoke files with insufficient provenance (8)
 
-That pair is also not evidence of a defense effect: both runs have ASR `0.0`, and the Stage 1 run
-blocked zero calls. The exact producing commands were not retained in those historical reports.
+These files lack a reproducible matched comparison, retained command/version provenance, or both.
+Their one-case values cannot establish a baseline or CapGate effect.
 
-`agentdojo-groundtruth-capgate-policy-20260630.json` is the first report using the current policy-
-integrated runner with command and AgentDojo-version provenance. It is an offline one-case utility
-and receipt-wiring check (`utility=1.0`, no security cases), not an ASR result.
-
-`agentdojo-groundtruth-capgate-stage2-routing-20260630.json` reruns that same offline one-case check
-after explicit risk routing landed. It again produced `utility=1.0`, one mediated/replay-verified
-tool call, and no security cases. It is regression evidence only; ASR remains not applicable.
-
-An OCI paired run for `user_task_0` + `injection_task_4` was attempted on 2026-06-30. The provider
-call did not finish within the bounded smoke window, so no report or benchmark number was produced.
+- `agentdojo-groundtruth-capgate-smoke.json`
+- `agentdojo-groundtruth-smoke.json`
+- `agentdojo-oci-mini-injecagent-control-smoke.json`
+- `agentdojo-oci-mini-strong-control-smoke.json`
+- `agentdojo-oci-mini-system-message-control-smoke.json`
+- `agentdojo-oci-mini-undefended-current-smoke.json`
+- `agentdojo-oci-mini-user24-control.json`
+- `agentdojo-oci-nano-user24-control.json`

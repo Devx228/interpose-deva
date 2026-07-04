@@ -19,6 +19,7 @@ from capgate.proxy.client import StdioJsonRpcClient
 from capgate.proxy.events import JsonObject, ToolCallEvent
 from capgate.proxy.sandbox import SandboxCallExecutor
 from capgate.proxy.session import ProxySession
+from capgate.receipts.model import hash_json
 from capgate.receipts.replay import replay_session
 from capgate.receipts.signer import Ed25519Signer, Ed25519Verifier, ReceiptWriter
 from capgate.receipts.store import JsonlReceiptStore
@@ -51,8 +52,17 @@ class FailingDecisionPipeline(DecisionPipeline):
 class MutableToolListDownstream:
     def __init__(self, description: str = "Original description") -> None:
         self.description = description
+        self.methods: list[str] = []
 
     async def request(self, message: JsonObject) -> JsonObject:
+        method = message.get("method")
+        self.methods.append(method if isinstance(method, str) else "<unknown>")
+        if method != "tools/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "result": {"ok": True},
+            }
         return {
             "jsonrpc": "2.0",
             "id": message.get("id"),
@@ -66,6 +76,17 @@ class MutableToolListDownstream:
                 ]
             },
         }
+
+
+class StaticResponseDownstream:
+    def __init__(self, response: JsonObject) -> None:
+        self.response = response
+        self.calls = 0
+
+    async def request(self, message: JsonObject) -> JsonObject:
+        _ = message
+        self.calls += 1
+        return self.response
 
 
 class RecordingSandbox:
@@ -114,6 +135,15 @@ def _sandbox_pipeline(risk_class: RiskClass) -> DecisionPipeline:
             )
         }
     )
+
+
+def _error_data(response: JsonObject | None) -> JsonObject:
+    assert response is not None
+    error = response.get("error")
+    assert isinstance(error, dict)
+    data = error.get("data")
+    assert isinstance(data, dict)
+    return data
 
 
 def test_stdio_client_round_trips_json_rpc_to_downstream() -> None:
@@ -219,6 +249,7 @@ def test_proxy_blocks_private_untrusted_flow_before_external_call(tmp_path: Path
                 server_name="echo-server",
                 session_id="session-1",
                 decision_pipeline=pipeline,
+                require_tool_discovery=False,
             )
             await session.handle_message(
                 {
@@ -275,6 +306,7 @@ def test_proxy_does_not_execute_approval_required_call(tmp_path: Path) -> None:
             server_name="test-server",
             session_id="session-1",
             decision_pipeline=pipeline,
+            require_tool_discovery=False,
         )
         response = await session.handle_message(
             {
@@ -305,6 +337,7 @@ def test_proxy_decision_exception_blocks_without_exposing_error(tmp_path: Path) 
             server_name="test-server",
             session_id="session-1",
             decision_pipeline=FailingDecisionPipeline({}),
+            require_tool_discovery=False,
         )
         response = await session.handle_message(
             {
@@ -374,6 +407,11 @@ tools:
     )
     receipt_log = tmp_path / "receipts.jsonl"
     public_key = tmp_path / "ed25519.public"
+    list_message: JsonObject = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/list",
+    }
     message: JsonObject = {
         "jsonrpc": "2.0",
         "id": 7,
@@ -403,19 +441,20 @@ tools:
             sys.executable,
             "tests/fixtures/echo_mcp_server.py",
         ],
-        input=json.dumps(message) + "\n",
+        input=json.dumps(list_message) + "\n" + json.dumps(message) + "\n",
         check=False,
         capture_output=True,
         text=True,
     )
 
     assert completed.returncode == 0, completed.stderr
-    response = json.loads(completed.stdout)
+    responses = [json.loads(line) for line in completed.stdout.splitlines()]
+    response = responses[-1]
     assert response["error"]["data"]["rule_id"] == "policy.cannot.read:echo"
     verifier = Ed25519Verifier.from_public_key_file(public_key)
     stored = JsonlReceiptStore(receipt_log).iter_receipts()
     receipt = replay_session(receipt_log, stored[0].session_id, verifier)
-    assert receipt.receipts[0].verdict == "BLOCK"
+    assert [item.verdict for item in receipt.receipts] == ["ALLOW", "BLOCK"]
 
 
 def test_proxy_blocks_changed_tool_definition(tmp_path: Path) -> None:
@@ -444,6 +483,280 @@ def test_proxy_blocks_changed_tool_definition(tmp_path: Path) -> None:
     assert error["data"] == {"rule_id": "mcp.tool_definition_changed"}
     receipts = JsonlReceiptStore(tmp_path / "receipts.jsonl").iter_receipts()
     assert [receipt.verdict for receipt in receipts] == ["ALLOW", "BLOCK"]
+
+
+def test_enforcement_requires_a_fully_accepted_tool_catalog(tmp_path: Path) -> None:
+    async def run() -> tuple[list[JsonObject | None], MutableToolListDownstream]:
+        downstream = MutableToolListDownstream()
+        session = ProxySession(
+            downstream=downstream,
+            receipt_writer=ReceiptWriter(
+                store=JsonlReceiptStore(tmp_path / "receipts.jsonl"),
+                signer=Ed25519Signer.generate(),
+            ),
+            server_name="server-a",
+            session_id="session",
+            decision_pipeline=DecisionPipeline(
+                {
+                    "shared_tool": ToolMetadata(
+                        result_label=Label(Confidentiality.PUBLIC, Integrity.TRUSTED),
+                        risk_class=RiskClass.TRUSTED_DIRECT,
+                    )
+                }
+            ),
+            tool_pin_registry=ToolPinRegistry(),
+            server_tool_registry=ServerToolRegistry(),
+        )
+        call: JsonObject = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "shared_tool", "arguments": {}},
+        }
+        listing: JsonObject = {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+        before_list = await session.handle_message(call)
+        accepted_list = await session.handle_message(listing)
+        allowed_call = await session.handle_message(call)
+        downstream.description = "Changed description"
+        rejected_list = await session.handle_message(listing)
+        after_rejected_list = await session.handle_message(call)
+        return (
+            [before_list, accepted_list, allowed_call, rejected_list, after_rejected_list],
+            downstream,
+        )
+
+    responses, downstream = asyncio.run(run())
+
+    assert _error_data(responses[0]) == {"rule_id": "mcp.tool_not_discovered"}
+    assert responses[1] is not None and "result" in responses[1]
+    assert responses[2] is not None and responses[2].get("result") == {"ok": True}
+    assert _error_data(responses[3]) == {"rule_id": "mcp.tool_definition_changed"}
+    assert _error_data(responses[4]) == {"rule_id": "mcp.tool_not_discovered"}
+    assert downstream.methods == ["tools/list", "tools/call", "tools/list"]
+
+
+@pytest.mark.parametrize("method", ["resources/read", "prompts/get", "custom/write"])
+def test_enforcement_blocks_unmediated_methods_with_a_receipt(
+    tmp_path: Path,
+    method: str,
+) -> None:
+    downstream = RecordingDownstream()
+
+    async def run() -> JsonObject | None:
+        session = ProxySession(
+            downstream=downstream,
+            receipt_writer=ReceiptWriter(
+                store=JsonlReceiptStore(tmp_path / "receipts.jsonl"),
+                signer=Ed25519Signer.generate(),
+            ),
+            server_name="server",
+            session_id="session",
+            decision_pipeline=_sandbox_pipeline(RiskClass.TRUSTED_DIRECT),
+        )
+        return await session.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": method,
+                "params": {"uri": "file:///private"},
+            }
+        )
+
+    response = asyncio.run(run())
+
+    assert downstream.calls == 0
+    assert _error_data(response) == {"rule_id": "proxy.unmediated_method"}
+    receipt = JsonlReceiptStore(tmp_path / "receipts.jsonl").iter_receipts()[0]
+    assert receipt.verdict == "BLOCK"
+    assert receipt.tool == f"rpc:{method}"
+
+
+def test_enforcement_blocks_non_string_method_without_crashing(tmp_path: Path) -> None:
+    downstream = RecordingDownstream()
+
+    async def run() -> JsonObject | None:
+        session = ProxySession(
+            downstream=downstream,
+            receipt_writer=ReceiptWriter(
+                store=JsonlReceiptStore(tmp_path / "receipts.jsonl"),
+                signer=Ed25519Signer.generate(),
+            ),
+            server_name="server",
+            session_id="session",
+            decision_pipeline=_sandbox_pipeline(RiskClass.TRUSTED_DIRECT),
+        )
+        return await session.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": ["tools/call"]}
+        )
+
+    response = asyncio.run(run())
+
+    assert downstream.calls == 0
+    assert _error_data(response) == {"rule_id": "proxy.unmediated_method"}
+    receipt = JsonlReceiptStore(tmp_path / "receipts.jsonl").iter_receipts()[0]
+    assert receipt.verdict == "BLOCK"
+
+
+def test_enforcement_forwards_required_control_method(tmp_path: Path) -> None:
+    downstream = RecordingDownstream()
+
+    async def run() -> JsonObject | None:
+        session = ProxySession(
+            downstream=downstream,
+            receipt_writer=ReceiptWriter(
+                store=JsonlReceiptStore(tmp_path / "receipts.jsonl"),
+                signer=Ed25519Signer.generate(),
+            ),
+            server_name="server",
+            decision_pipeline=_sandbox_pipeline(RiskClass.TRUSTED_DIRECT),
+        )
+        return await session.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "1.0"},
+                },
+            }
+        )
+
+    response = asyncio.run(run())
+
+    assert downstream.calls == 1
+    assert response is not None and response.get("result") == {"ok": True}
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        {"jsonrpc": "1.0", "id": 1, "method": "ping"},
+        {"jsonrpc": "2.0", "method": "ping"},
+        {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": None},
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "logging/setLevel",
+            "params": {"level": "verbose"},
+        },
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": {},
+        },
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/progress",
+            "params": {"progressToken": "task", "progress": True},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "notifications/initialized",
+        },
+        {"jsonrpc": "2.0", "id": 1, "method": "ping", "unexpected": True},
+    ],
+)
+def test_enforcement_rejects_malformed_control_messages_with_receipt(
+    tmp_path: Path,
+    message: JsonObject,
+) -> None:
+    downstream = RecordingDownstream()
+
+    async def run() -> JsonObject | None:
+        session = ProxySession(
+            downstream=downstream,
+            receipt_writer=ReceiptWriter(
+                store=JsonlReceiptStore(tmp_path / "receipts.jsonl"),
+                signer=Ed25519Signer.generate(),
+            ),
+            server_name="server",
+            session_id="session",
+            decision_pipeline=_sandbox_pipeline(RiskClass.TRUSTED_DIRECT),
+        )
+        return await session.handle_message(message)
+
+    response = asyncio.run(run())
+
+    assert downstream.calls == 0
+    if "id" in message:
+        assert _error_data(response) == {"rule_id": "proxy.invalid_control_request"}
+    else:
+        assert response is None
+    receipt = JsonlReceiptStore(tmp_path / "receipts.jsonl").iter_receipts()[0]
+    assert receipt.verdict == "BLOCK"
+    assert receipt.rule_id == "proxy.invalid_control_request"
+
+
+def test_proxy_rejects_malformed_arguments_before_forwarding(tmp_path: Path) -> None:
+    downstream = RecordingDownstream()
+    message: JsonObject = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "tool", "arguments": ["private-value"]},
+    }
+
+    async def run() -> JsonObject | None:
+        session = ProxySession(
+            downstream=downstream,
+            receipt_writer=ReceiptWriter(
+                store=JsonlReceiptStore(tmp_path / "receipts.jsonl"),
+                signer=Ed25519Signer.generate(),
+            ),
+            server_name="server",
+            session_id="session",
+        )
+        return await session.handle_message(message)
+
+    response = asyncio.run(run())
+
+    assert downstream.calls == 0
+    assert _error_data(response) == {"rule_id": "proxy.invalid_tool_request"}
+    receipt = JsonlReceiptStore(tmp_path / "receipts.jsonl").iter_receipts()[0]
+    assert receipt.args_hash == hash_json({"request": message})
+    assert receipt.args_hash != hash_json({})
+
+
+def test_proxy_rejects_mismatched_downstream_response(tmp_path: Path) -> None:
+    downstream = StaticResponseDownstream(
+        {"jsonrpc": "2.0", "id": 999, "result": {"private": "value"}}
+    )
+
+    async def run() -> JsonObject | None:
+        session = ProxySession(
+            downstream=downstream,
+            receipt_writer=ReceiptWriter(
+                store=JsonlReceiptStore(tmp_path / "receipts.jsonl"),
+                signer=Ed25519Signer.generate(),
+            ),
+            server_name="server",
+            session_id="session",
+        )
+        return await session.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "tool", "arguments": {}},
+            }
+        )
+
+    response = asyncio.run(run())
+
+    assert downstream.calls == 1
+    assert _error_data(response) == {"rule_id": "proxy.downstream_error"}
+    receipt = JsonlReceiptStore(tmp_path / "receipts.jsonl").iter_receipts()[0]
+    assert receipt.verdict == "BLOCK"
+    assert receipt.rule_id == "proxy.downstream_error"
 
 
 def test_proxy_blocks_cross_server_tool_shadowing(tmp_path: Path) -> None:
@@ -520,6 +833,7 @@ def test_proxy_routes_risky_calls_only_to_required_sandbox(
             session_id="session",
             decision_pipeline=_sandbox_pipeline(risk_class),
             sandbox_executors={backend: executor},
+            require_tool_discovery=False,
         )
         response = await session.handle_message(
             {
@@ -559,6 +873,7 @@ def test_proxy_blocks_risky_call_when_required_executor_is_missing(tmp_path: Pat
             server_name="server",
             session_id="session",
             decision_pipeline=_sandbox_pipeline(RiskClass.FIXED_RISKY),
+            require_tool_discovery=False,
         )
         return await session.handle_message(
             {
@@ -637,6 +952,7 @@ def test_proxy_sandbox_failures_block_without_raw_fallback_and_are_receipted(
             session_id="session",
             decision_pipeline=_sandbox_pipeline(RiskClass.FIXED_RISKY),
             sandbox_executors={SandboxBackend.GVISOR: executor},
+            require_tool_discovery=False,
         )
         return await session.handle_message(
             {
@@ -674,6 +990,7 @@ def test_proxy_session_call_budget_blocks_before_second_execution(tmp_path: Path
             session_id="session",
             decision_pipeline=_sandbox_pipeline(RiskClass.TRUSTED_DIRECT),
             session_budget=SessionBudget(_sandbox_limits(max_tool_calls=1)),
+            require_tool_discovery=False,
         )
         message: JsonObject = {
             "jsonrpc": "2.0",

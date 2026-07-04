@@ -1,91 +1,161 @@
-# capgate build status — 2026-06-30 13:28 IST
+# CapGate build status — 2026-07-04 IST
 
-## Stages
+## v0.1 milestone
 
-- Stage 0: **PARTIAL** — stdio MCP pass-through, Ed25519 hash-chained receipts, replay, AgentDojo runtime mediation, and in-memory OTel export are tested; representative baseline equivalence and collector visibility are not established.
-- Stage 1: **PARTIAL** — taint labels/tracking, strict capability policy, static source-to-sink rules, lethal-trifecta enforcement, fail-closed proxy execution, and CLI policy loading work locally; explicit value-level provenance and the measured exit gate remain incomplete.
-- Stage 2: **PARTIAL** — live `tools/list` pin/shadow checks, explicit risk routing, finite-limit and quota contracts, deny-default egress policy, fail-closed sandbox-call routing, and gVisor/Firecracker adapter plans are tested. There is no production runner, profile loader, controlled egress broker, or privileged Linux validation, so real isolation is not established.
-- Stage 3: **PARTIAL** — a provider-independent no-token quarantine boundary, strict evidence-only adaptive comparator, and dependency-free LangGraph translation seam are unit-tested. No live dual-model flow, adaptive attack run, red-team loop, or working framework integration exists.
+**DONE — research-prototype scope.** CapGate now has a hardened stdio MCP tool-call boundary, an
+offline end-to-end security demonstration, a public security model, a code-linked learning path,
+and CI configuration. The milestone is intentionally narrower than the original four-stage
+research roadmap.
+
+The v0.1 claim is:
+
+> A fail-closed MCP tool-call mediation prototype with capability and source-to-sink policy,
+> persistent tool-definition pinning, and signed replayable audit receipts.
+
+It is not a production release or evidence that every original stage is complete.
+
+## Original roadmap stages
+
+- Stage 0: **PARTIAL** — stdio MCP pass-through/mediation, Ed25519 hash-chained receipts, replay,
+  AgentDojo runtime mediation, and in-memory OTel export are tested. A representative AgentDojo
+  baseline and live collector validation are not established.
+- Stage 1: **PARTIAL** — taint labels/tracking, strict capability policy, source-to-sink rules,
+  lethal-trifecta enforcement, fail-closed execution, and CLI policy loading work locally. Runtime
+  provenance remains conservative and representative ASR/utility gates are not measured.
+- Stage 2: **PARTIAL** — tool-definition pins, process-local shadow checks, risk routing, limits,
+  egress contracts, and gVisor/Firecracker request adapters are tested through pure logic or fake
+  runners. Real isolation and controlled egress are not established.
+- Stage 3: **PARTIAL** — a provider-independent quarantine boundary, evidence-only adaptive
+  comparator, and LangGraph translation seam are unit-tested. No live dual-model flow, adaptive
+  attack run, red-team loop, or working framework integration exists.
 
 ## Measured numbers
 
-- AgentDojo undefended representative baseline: **ASR=NOT YET MEASURED, utility=NOT YET MEASURED** — retained reports cover one case and do not reproduce the benchmark baseline.
-- AgentDojo through capgate representative result: **ASR=NOT YET MEASURED, utility=NOT YET MEASURED** — no paired case currently demonstrates a defense delta.
-- Adaptive ASR: **NOT YET MEASURED** — the comparator exists, but no real paired attacker-moves-second reports have been produced.
+- AgentDojo undefended representative baseline: **ASR=NOT YET MEASURED,
+  utility=NOT YET MEASURED**.
+- AgentDojo through CapGate representative result: **ASR=NOT YET MEASURED,
+  utility=NOT YET MEASURED**.
+- Adaptive ASR: **NOT YET MEASURED**.
 
-### Real smoke evidence, not exit-gate numbers
+No current report may be used to claim a security-performance delta. See the
+[report validity manifest](bench/reports/README.md).
 
-- Post-routing offline ground-truth smoke: utility `1.0` over one utility case; one mediated, allowed, replay-verified call; ASR not applicable. The exact command and AgentDojo `0.1.35` version are embedded in [agentdojo-groundtruth-capgate-stage2-routing-20260630.json](bench/reports/agentdojo-groundtruth-capgate-stage2-routing-20260630.json).
-- Current policy-integrated offline ground-truth smoke: utility `1.0` over one utility case; one observed, mediated, allowed, and replay-verified tool call. ASR is not applicable. The exact command and AgentDojo `0.1.35` version are embedded in [agentdojo-groundtruth-capgate-policy-20260630.json](bench/reports/agentdojo-groundtruth-capgate-policy-20260630.json).
-- Historical corrected OCI one-case control and Stage 1 files both report ASR `0.0`, utility `1.0`; Stage 1 blocked zero calls. They are wiring evidence, not a defense result, and their exact producing commands were not retained. See [benchmark validity notes](bench/reports/README.md).
-- A new paired OCI `user_task_0` + `injection_task_4` control was attempted on 2026-06-30. Sandbox DNS blocked the first attempt; the approved-network retry produced no output within the bounded three-minute window and was terminated. No report or number was produced, so the Stage 1 half was not run.
+### Reproducible local evidence, not benchmark evidence
 
-## Blockers
-
-- The configured OCI endpoint is reachable only with elevated network permission in this environment, and the latest approved smoke call did not complete within the bounded window.
-- A cost/time budget for the representative/full AgentDojo matrix is not specified.
-- Existing AgentDojo run directories contain no retained raw result files, and historical JSON reports lack producing commands/code revisions.
-- Git was initialized after the retained reports were produced, so their `code_revision` fields remain null; future runs can record a real commit revision.
-- OTel is validated with an in-memory exporter, not a running local OTLP collector.
-- Host is Darwin arm64. `runsc`, Firecracker, and Kata are unavailable; privileged Linux isolation and egress tests cannot run here.
-- The [Stage 2 isolation design](docs/design-notes/STAGE2_ISOLATION.md) was approved by the project owner on 2026-06-30. Its real-runtime validation environment is still unavailable.
-
-## What is real vs scaffolded
-
-### Genuinely working and tested locally
-
-- Line-delimited JSON-RPC tool-call proxy and downstream forwarding.
-- Signed/hash-chained receipt-v2 creation, tamper detection, replay verification, and structured sandbox backend/outcome/image audit fields.
-- OTel `execute_tool` spans through a configured in-memory exporter without raw arguments/results.
-- Taint label lattice, untrusted-by-default classification, monotonic tracker, and conservative session influence.
-- Strict YAML policy model, deny/approval/allow/default-deny precedence, confinement checks, and templates.
-- Static source-to-sink deny pairs and lethal-trifecta decisions.
-- Policy-before-flow pipeline and fail-closed handling for approval, decision errors, and downstream errors.
-- Real CLI policy + tool-metadata loading; denied calls do not execute downstream and receive BLOCK receipts.
-- AgentDojo native-runtime mediation with receipt-count/replay consistency checks.
-- Live persistent MCP tool-definition pinning and shared-registry tool-shadow blocking on `tools/list`, including signed allow/block receipts.
-- Explicit `trusted_direct` / `fixed_risky` / `generated_code` metadata with unknown/missing classifications blocked.
-- Fail-closed proxy routing to injected, backend-attested sandbox executors; timeout, output overflow, failed exit, malformed response, missing backend, and budget exhaustion produce signed BLOCK receipts without raw fallback.
-- Pure egress policy checks for canonical host/path/request contracts, prohibited IPs, CNAMEs, redirects, and DNS rebinding evidence.
-- Finite sandbox-limit contracts and a locked session/token/cost reservation ledger.
-- Shell-free gVisor and Firecracker request adapters tested through fake runners.
-- Dual-model quarantine contracts that send raw content only to a tool-less extractor and expose only opaque field references/types to the privileged planner; every provider/schema/input error blocks.
-- Offline adaptive comparison rejects static, unversioned, incompatible, incomplete, or non-receipted evidence and computes deltas only from supplied compatible measured reports.
-- LangGraph-shaped tool-call translation and uniform non-ALLOW rejection with no security logic or framework dependency in the adapter seam.
-
-### Partial, interface-only, or unvalidated
-
-- Provenance at runtime boundaries uses conservative session-wide influence; `arg_provenance` is not populated from real value derivation.
-- Tool descriptions are pinned but are not yet represented in the taint/provenance graph.
-- Tool-definition pins persist atomically in a private SQLite file, but there is no explicit re-approval workflow. The production proxy is single-downstream, and cross-server provenance grants/ownership are not shared across independent proxy processes.
-- The stock CLI has no production sandbox profile/runner configuration. A configured risky tool therefore blocks; fake-executor tests establish routing behavior only.
-- The downstream MCP server is still launched directly on the host before per-call routing. A hostile server process itself is not contained.
-- gVisor/Firecracker plans, filesystem restrictions, complete limit enforcement, digest binding, lifecycle cleanup, and egress enforcement are not validated against real runtimes.
-- Egress is policy logic only; no controlled resolver/network broker enforces it.
-- Receipt v2 signs sandbox backend, sanitized outcome, and pinned image digest when known, but profile ID, configured/observed limits, egress decisions, lifecycle state, and cleanup outcome are not yet represented.
-- Execution still precedes final receipt append; a receipt-store failure after a side effect cannot currently roll the side effect back or prove a durable completion record.
-- Dual-model quarantine has no live provider integration or trusted post-policy opaque-reference resolver.
-- The LangGraph seam is not connected to LangGraph. A framework-neutral mediator must first be extracted from `ProxySession`; OpenAI Agents SDK and Pydantic AI seams are not implemented.
-- The adaptive comparator validates evidence but does not generate adaptive attacks. Existing checked-in static reports are correctly rejected as `NOT YET MEASURED`.
-- No working framework adapter, live adaptive evaluation, or automated red-team loop is present.
-
-## Honest next steps to hit unmet exit gates
-
-1. Diagnose provider latency with a bounded direct completion probe, agree a benchmark cost/time budget, then run a fresh identical Stage 0 undefended/mediated matrix with commands and raw artifacts retained.
-2. Replace session-wide influence with explicit argument/result provenance plumbing and freeze utility regressions caused by over-tainting.
-3. Run targeted attacks where the undefended control actually succeeds; only then measure Stage 1 ASR and utility delta.
-4. Add a strict sandbox-profile loader and trusted runner, move the risky downstream launch boundary inside the selected sandbox, and bind configured image digests to verified runtime assets.
-5. Implement the controlled DNS/egress broker and complete sandbox profile/limit/egress/lifecycle receipt metadata, then run the privileged Linux conformance, resource-exhaustion, and exfiltration suite.
-6. Add an explicit pin re-approval workflow and share multi-server ownership/provenance state before running the rug-pull and shadow-server exit tests.
-7. Extract a framework-neutral mediation service from `ProxySession`, then connect and version-test real LangGraph, OpenAI Agents SDK, and Pydantic AI wrappers without duplicating security logic.
-8. Add live quarantine providers plus a trusted capability-checked opaque-value resolver; then implement the adaptive attacker/red-team loop and retain real paired reports.
-
-## Local validation command
+Run:
 
 ```bash
-ruff check .
-mypy --strict src tests
-pytest
+.venv/bin/python examples/offline_demo/run.py
 ```
 
-Current local result: Ruff passed, strict mypy passed across 76 source files, and pytest passed `320` tests.
+The demo uses the real CLI proxy path with an empty environment and temporary state. It verifies:
+
+- accepted tool discovery and a private read are allowed;
+- the private, untrusted result cannot flow to an external sink;
+- the blocked send never reaches the downstream server;
+- three signed/hash-chained receipts replay and contain no raw private marker;
+- a changed tool definition is blocked after proxy restart; and
+- a modified receipt fails signature verification.
+
+Its output explicitly states that this is offline deterministic control validation, not AgentDojo
+ASR or production-isolation evidence.
+
+The retained AgentDojo ground-truth reports cover one utility case, one mediated/replay-verified
+ALLOW, zero security cases, and therefore no ASR. They remain wiring evidence only.
+
+## Security boundary hardening completed for v0.1
+
+- Secure-mode resource, prompt, sampling, and custom JSON-RPC methods no longer bypass the policy
+  boundary; they receive signed `proxy.unmediated_method` BLOCK receipts.
+- Tool calls require a complete, successfully validated `tools/list` catalog. A later rejected
+  catalog invalidates the accepted set before another call can execute.
+- Tool requests and downstream responses now require supported fields, object arguments, matching
+  typed IDs, JSON-RPC 2.0, and exactly one result or error. The receipt/taint representation cannot
+  silently differ from a malformed transmitted payload.
+- Receipt versions accept exact schemas only. Strict Base64 and Ed25519 lengths, recursive duplicate
+  JSON-key rejection, and non-empty replay prevent modified artifacts from being reported valid.
+- Offline AgentDojo ground-truth runs no longer read `.env`. New reports record `code_revision` only
+  when Git HEAD exists and the nonignored Git worktree is clean; ignored files and the wider run
+  environment remain outside that provenance field.
+
+## What is genuinely working and tested locally
+
+- Strict line-delimited JSON-RPC `tools/list` and `tools/call` mediation.
+- Accepted-catalog enforcement, persistent SQLite definition pins, and process-local shadow checks.
+- Deny/approval/allow/default-deny capability precedence and monotonic policy confinement.
+- Confidentiality/integrity/source-tag joins, monotonic tracking, and conservative session influence.
+- Static source-to-sink deny pairs and private-plus-untrusted external-sink blocking.
+- Fail-closed handling for malformed protocol data, unmediated methods, approval, internal decision
+  errors, downstream errors, unavailable sandbox routes, budget exhaustion, and malformed sandbox
+  results.
+- Ed25519-signed, hash-chained, versioned receipts with argument/result hashes, replay, and tamper
+  detection.
+- Bounded OTel decision metadata without raw arguments or results.
+- Pure egress/canonicalization policy and locked session quota ledger.
+- Shell-free gVisor and Firecracker request-plan adapters through injected fake runners.
+- Tool-less quarantine extraction with planner-visible opaque references only.
+- Evidence-validating adaptive comparator and dependency-free LangGraph translation seam.
+- No-network offline security demo and pinned two-version CI workflow.
+
+## Partial, interface-only, or unvalidated
+
+- Real MCP calls do not populate value-level `arg_provenance`; prior tool results conservatively
+  influence the entire session.
+- Secure mode deliberately blocks unmediated MCP resource, prompt, sampling, and custom methods
+  rather than implementing them.
+- Tool requests carrying MCP `_meta` progress metadata are rejected in v0.1; that optional protocol
+  surface has not yet been included in policy evaluation and signed argument evidence.
+- Pins trust the first observed definition and have no explicit re-approval flow. Cross-process
+  multi-server ownership/provenance is incomplete.
+- The downstream MCP server is launched on the host. Per-call routing does not contain that process.
+- The stock CLI has no production sandbox runner/profile or controlled DNS/egress broker.
+- Trusted-direct downstream calls have no configured response timeout, and child stderr is not
+  actively drained; a stalled or noisy downstream can hang a session.
+- gVisor/Firecracker isolation, complete limits, digest binding, lifecycle cleanup, and egress
+  enforcement have not been tested on a privileged Linux host.
+- Receipt append happens after an allowed side effect; a store failure cannot roll the action back.
+  The retained chain also has no external anchor that proves its tail was not deleted.
+- The dual-model boundary has no live provider or trusted opaque-value resolver.
+- The LangGraph seam is not connected to LangGraph; OpenAI Agents SDK and Pydantic AI adapters are
+  absent.
+- No live adaptive attack generator, automated red-team loop, or representative benchmark matrix is
+  present.
+
+## Current blockers
+
+- No agreed provider/model cost and time budget for representative AgentDojo control and CapGate
+  matrices.
+- This host is Darwin arm64; `runsc`, Firecracker, Kata, KVM, and privileged Linux conformance are
+  unavailable.
+- No Linux runner/profile/egress-broker implementation exists to validate Stage 2 honestly.
+- No external receipt checkpoint/key-custody design exists for log completeness and replacement
+  resistance.
+- No repository license has been selected. The code should not be described as open source until the
+  owner chooses one.
+
+## Ordered next steps
+
+1. Review and commit this v0.1 slice, push it, and confirm both CI matrix jobs and the offline demo
+   pass from the remote workflow.
+2. Choose a license and create a `v0.1.0` research-prototype tag/release with the explicit nonclaims
+   from the README.
+3. Agree a benchmark provider/model/cost/time matrix, then run identical clean-revision undefended
+   and CapGate AgentDojo cases whose control attack actually succeeds.
+4. Add explicit argument/result provenance and freeze utility regressions caused by conservative
+   session taint.
+5. Move sandbox validation to a supported Linux host; implement the trusted runner and egress broker
+   before claiming isolation.
+6. Add pin re-approval and shared multi-server provenance, then integrate one real framework adapter.
+
+## Local validation
+
+```bash
+.venv/bin/ruff check .
+.venv/bin/mypy --strict src tests examples
+.venv/bin/pytest -q
+.venv/bin/python examples/offline_demo/run.py
+```
+
+Current result: Ruff passed, strict mypy passed, pytest passed **358 tests**, and the offline demo
+completed with every control check true. CI is configured but has not been observed remotely for
+this unpushed worktree.

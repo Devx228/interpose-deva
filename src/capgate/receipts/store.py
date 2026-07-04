@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 from capgate.receipts.model import Receipt
 
@@ -31,10 +32,13 @@ class JsonlReceiptStore:
             for line in handle:
                 if not line.strip():
                     continue
-                data = json.loads(line)
+                data = cast(
+                    object,
+                    json.loads(line, object_pairs_hook=_reject_duplicate_keys),
+                )
                 if not isinstance(data, dict):
                     raise ValueError("receipt log line must be a JSON object")
-                receipt = Receipt.from_dict(data)
+                receipt = Receipt.from_dict(cast(dict[str, Any], data))
                 if session_id is None or receipt.session_id == session_id:
                     receipts.append(receipt)
         return receipts
@@ -45,3 +49,12 @@ class JsonlReceiptStore:
             return ReceiptSessionState(next_seq=1, prev_receipt_hash=None)
         last = receipts[-1]
         return ReceiptSessionState(next_seq=last.seq + 1, prev_receipt_hash=last.receipt_hash())
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("receipt log contains duplicate JSON object keys")
+        result[key] = value
+    return result

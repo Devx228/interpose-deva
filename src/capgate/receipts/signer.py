@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -21,6 +22,8 @@ from capgate.receipts.model import Receipt, SandboxAudit, hash_json
 from capgate.receipts.store import JsonlReceiptStore
 
 SIGNATURE_PREFIX = "ed25519:"
+_ED25519_KEY_BYTES = 32
+_ED25519_SIGNATURE_BYTES = 64
 
 
 class Ed25519Signer:
@@ -36,7 +39,11 @@ class Ed25519Signer:
         private_key_file.parent.mkdir(parents=True, exist_ok=True)
         public_key_file.parent.mkdir(parents=True, exist_ok=True)
         if private_key_file.exists():
-            raw_private = base64.b64decode(private_key_file.read_text(encoding="ascii"))
+            raw_private = _read_base64_file(
+                private_key_file,
+                expected_bytes=_ED25519_KEY_BYTES,
+                field="private key",
+            )
             private_key = Ed25519PrivateKey.from_private_bytes(raw_private)
         else:
             private_key = Ed25519PrivateKey.generate()
@@ -74,7 +81,11 @@ class Ed25519Verifier:
 
     @classmethod
     def from_public_key_file(cls, public_key_file: Path) -> Ed25519Verifier:
-        raw_public = base64.b64decode(public_key_file.read_text(encoding="ascii"))
+        raw_public = _read_base64_file(
+            public_key_file,
+            expected_bytes=_ED25519_KEY_BYTES,
+            field="public key",
+        )
         return cls(Ed25519PublicKey.from_public_bytes(raw_public))
 
     def verify_receipt(self, receipt: Receipt) -> None:
@@ -85,7 +96,11 @@ class Ed25519Verifier:
     def verify(self, payload: bytes, signature: str) -> None:
         if not signature.startswith(SIGNATURE_PREFIX):
             raise ValueError("unsupported signature scheme")
-        raw_signature = base64.b64decode(signature.removeprefix(SIGNATURE_PREFIX))
+        raw_signature = _decode_base64(
+            signature.removeprefix(SIGNATURE_PREFIX),
+            expected_bytes=_ED25519_SIGNATURE_BYTES,
+            field="receipt signature",
+        )
         try:
             self._public_key.verify(raw_signature, payload)
         except InvalidSignature as exc:
@@ -129,3 +144,24 @@ class ReceiptWriter:
 
 def _raw_public_key(public_key: Ed25519PublicKey) -> bytes:
     return public_key.public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw)
+
+
+def _read_base64_file(path: Path, *, expected_bytes: int, field: str) -> bytes:
+    try:
+        encoded = path.read_text(encoding="ascii")
+    except UnicodeError:
+        raise ValueError(f"{field} is invalid") from None
+    return _decode_base64(encoded, expected_bytes=expected_bytes, field=field)
+
+
+def _decode_base64(encoded: str, *, expected_bytes: int, field: str) -> bytes:
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError(f"{field} is invalid") from None
+    if (
+        len(decoded) != expected_bytes
+        or base64.b64encode(decoded).decode("ascii") != encoded
+    ):
+        raise ValueError(f"{field} is invalid")
+    return decoded

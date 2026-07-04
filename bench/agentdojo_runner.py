@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import uuid
 from collections.abc import Mapping, Sequence
@@ -31,6 +33,8 @@ Mode = Literal["undefended", "capgate"]
 PipelineKind = Literal["agentdojo", "ground-truth"]
 EnforcementMode = Literal["none", "stage0", "stage1"]
 DEFAULT_MODEL = "gpt-4o-2024-05-13"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_GIT_TIMEOUT_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -126,9 +130,6 @@ def run_agentdojo(
             note=f"AgentDojo import failed: {exc}",
         )
 
-    load_dotenv(".env")
-    if model == DEFAULT_MODEL:
-        model = os.getenv("CAPGATE_AGENTDOJO_MODEL", model)
     suite = get_suite(benchmark_version, suite_name)
     selected_user_tasks = _list_or_none(user_tasks)
     selected_injection_tasks = _list_or_none(injection_tasks)
@@ -141,6 +142,9 @@ def run_agentdojo(
         pipeline = GroundTruthPipeline(first_task)
         pipeline.name = "ground-truth"
     else:
+        load_dotenv(".env")
+        if model == DEFAULT_MODEL:
+            model = os.getenv("CAPGATE_AGENTDOJO_MODEL", model)
         missing = _missing_required_env_for_model(model, base_url=os.getenv("OPENAI_BASE_URL"))
         if missing:
             return AgentDojoReport(
@@ -331,6 +335,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         report,
         command=(sys.executable, "bench/agentdojo_runner.py", *raw_argv),
         agentdojo_version=_package_version("agentdojo"),
+        code_revision=_clean_git_revision(),
     )
     write_report(report, args.out)
     print(json.dumps(asdict(report), sort_keys=True))
@@ -659,6 +664,47 @@ def _package_version(package: str) -> str | None:
         return version(package)
     except PackageNotFoundError:
         return None
+
+
+def _clean_git_revision(repo_root: Path = _REPO_ROOT) -> str | None:
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        return None
+    try:
+        completed = subprocess.run(  # noqa: S603 - fixed argv, trusted local Git executable
+            [
+                git_executable,
+                "--no-optional-locks",
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--untracked-files=all",
+                "--ignore-submodules=none",
+            ],
+            cwd=repo_root,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+
+    revision: str | None = None
+    for line in completed.stdout.splitlines():
+        if line.startswith("# branch.oid "):
+            revision = line.removeprefix("# branch.oid ")
+        elif not line.startswith("# "):
+            return None
+    if revision is None or len(revision) not in {40, 64}:
+        return None
+    if any(character not in "0123456789abcdef" for character in revision):
+        return None
+    return revision
 
 
 def _missing_required_env_for_model(model: str, *, base_url: str | None) -> list[str]:

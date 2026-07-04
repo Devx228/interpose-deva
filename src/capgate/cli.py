@@ -18,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="capgate")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    proxy = subparsers.add_parser("proxy", help="Run the stdio JSON-RPC pass-through proxy.")
+    proxy = subparsers.add_parser("proxy", help="Run the stdio JSON-RPC MCP mediation proxy.")
     proxy.add_argument("--receipt-log", type=Path, default=defaults.receipt_log)
     proxy.add_argument("--key-file", type=Path, default=defaults.private_key_file)
     proxy.add_argument("--public-key-file", type=Path, default=defaults.public_key_file)

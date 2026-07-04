@@ -1,4 +1,4 @@
-"""Stage 0 foundation for the capgate agent runtime."""
+"""Capability-secure MCP tool-call mediation prototype."""
 
 __all__ = ["__version__"]
 

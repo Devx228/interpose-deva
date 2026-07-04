@@ -5,7 +5,7 @@ import json
 from collections.abc import Sequence
 from typing import Protocol
 
-from capgate.proxy.events import JsonObject
+from capgate.proxy.events import JsonObject, JsonValue, validate_jsonrpc_response
 
 
 class DownstreamClient(Protocol):
@@ -47,14 +47,18 @@ class StdioJsonRpcClient:
             await process.stdin.drain()
             if "id" not in message:
                 return None
-            return await self._read_response(process)
+            return await self._read_response(process, message["id"])
 
     def _require_process(self) -> asyncio.subprocess.Process:
         if self._process is None:
             raise RuntimeError("downstream process has not been started")
         return self._process
 
-    async def _read_response(self, process: asyncio.subprocess.Process) -> JsonObject:
+    async def _read_response(
+        self,
+        process: asyncio.subprocess.Process,
+        request_id: JsonValue,
+    ) -> JsonObject:
         if process.stdout is None:
             raise RuntimeError("downstream stdout is unavailable")
         line = await process.stdout.readline()
@@ -63,4 +67,5 @@ class StdioJsonRpcClient:
         decoded = json.loads(line.decode())
         if not isinstance(decoded, dict):
             raise RuntimeError("downstream returned a non-object JSON-RPC message")
+        validate_jsonrpc_response(decoded, request_id)
         return decoded

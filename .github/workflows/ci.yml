@@ -34,8 +34,8 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Install development and benchmark dependencies
-        run: python -m pip install -e ".[dev,bench]"
+      - name: Install development, benchmark, and LangGraph dependencies
+        run: python -m pip install -e ".[dev,bench,langgraph]"
 
       - name: Lint
         run: ruff check .
@@ -48,3 +48,6 @@ jobs:
 
       - name: Run offline security demo
         run: python examples/offline_demo/run.py
+
+      - name: Run offline LangGraph security demo
+        run: python examples/langgraph_security_demo.py

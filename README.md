@@ -2,10 +2,11 @@
 
 [![CI](https://github.com/Devx228/interpose-deva/actions/workflows/ci.yml/badge.svg)](https://github.com/Devx228/interpose-deva/actions/workflows/ci.yml)
 
-CapGate is a Python security mediator for MCP tool calls. It assumes an AI agent may be
-prompt-injected or otherwise compromised, then deterministically limits what that agent can do
-through capability policy, information-flow labels, source-to-sink rules, sandbox routing, and
-signed audit receipts.
+CapGate is a Python security mediator for AI-agent tool calls. Its primary surface is a hardened MCP
+proxy, with a narrow real LangGraph integration that reuses the same framework-neutral engine. It
+assumes an agent may be prompt-injected or otherwise compromised, then deterministically limits
+what that agent can do through capability policy, information-flow labels, source-to-sink rules,
+sandbox routing, and signed audit receipts.
 
 > **Current scope:** v0.1 is a research prototype with locally verified controls. It is not a
 > production security boundary. Representative AgentDojo ASR, adaptive robustness, and real Linux
@@ -29,9 +30,11 @@ context, not CapGate results.
 
 ```mermaid
 flowchart LR
-    A[Agent or MCP client] -->|JSON-RPC| P[CapGate stdio proxy]
+    A[MCP client] -->|JSON-RPC| P[CapGate stdio proxy]
+    LG[LangGraph ToolNode] --> M[Thin wrapper and ToolCallMediator]
     P --> V[Validate request and accepted tool catalog]
     V --> C[Capability policy]
+    M --> C
     C --> T[Taint and source-to-sink rules]
     T --> R[Risk-class routing]
     R -->|trusted direct| D[Downstream MCP server]
@@ -44,6 +47,7 @@ flowchart LR
     D --> Q
     G --> Q
     F --> Q
+    M --> Q
     Q --> L[Hash-chained JSONL audit log and replay]
 ```
 
@@ -76,6 +80,22 @@ The one-line JSON result proves, through the real CLI proxy path, that:
 The output explicitly labels itself as offline deterministic control validation—not AgentDojo ASR
 or production-isolation evidence. All state is created in a temporary directory and removed.
 
+## Run the LangGraph security demo
+
+This second demo uses a real compiled `StateGraph` and real `ToolNode`, but a deterministic planner
+instead of an LLM. It requires no model API key or network access:
+
+```bash
+python -m pip install -e ".[langgraph]"
+python examples/langgraph_security_demo.py
+```
+
+It allows a harmless status call and a synthetic private read, then blocks the private,
+untrusted-influenced value from reaching a synthetic external sink. The sink handler is never
+called, the three signed receipts replay, and the raw marker is absent from the receipt log. The
+adapter validates schema-coerced arguments against trusted caller-supplied labels and rejects
+multi-call turns or state/store/runtime-injected tool arguments in this v0.1 slice.
+
 ## What is backed today
 
 Local verification on 2026-07-04 used Python 3.14.5:
@@ -88,13 +108,13 @@ Local verification on 2026-07-04 used Python 3.14.5:
 | Audit integrity | Exact receipt schemas, strict Ed25519 material, chaining, replay, tamper tests | Locally verified for retained logs |
 | Egress, budgets, gVisor, Firecracker | Pure contracts and injected fake runners | Contract-tested only |
 | Dual-model quarantine | Tool-less extractor and opaque-reference boundary | Unit-tested boundary only |
-| LangGraph | Dependency-free translation seam | Not a working framework integration |
+| LangGraph | Compiled `StateGraph`, real `ToolNode`, framework-neutral mediator, offline adversarial demo | Locally verified narrow synchronous slice |
 | AgentDojo security performance | No representative paired run | **NOT YET MEASURED** |
 | Adaptive robustness | Evidence validator only; no campaign | **NOT YET MEASURED** |
 
-The current local suite passes **358 tests**, Ruff, and strict mypy. CI repeats the checks on the
-minimum supported Python 3.11 and Python 3.14, then runs the offline demo. The workflow's first
-remote result will appear after these changes are pushed.
+The current local suite passes **376 tests**, Ruff, and strict mypy. CI is configured to repeat the
+checks on the minimum supported Python 3.11 and Python 3.14, then run both offline demos. No remote
+workflow result is claimed here.
 
 ## Core security properties
 
@@ -115,13 +135,13 @@ remote result will appear after these changes are pushed.
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,langgraph]"
 ```
 
 Install the pinned, locally validated AgentDojo environment only when working on benchmark code:
 
 ```bash
-python -m pip install -e ".[dev,bench]"
+python -m pip install -e ".[dev,bench,langgraph]"
 ```
 
 Run all local checks:
@@ -131,6 +151,7 @@ ruff check .
 mypy --strict src tests examples
 pytest -q
 python examples/offline_demo/run.py
+python examples/langgraph_security_demo.py
 ```
 
 ## Run the proxy
@@ -205,6 +226,8 @@ the wider run environment are not captured. See the
 
 ## Learn and review the project
 
+- [Complete project guide](PROJECT_GUIDE.md) — beginner-first architecture, code map, lifecycle,
+  controls, demos, extension guide, debugging, roadmap, glossary, and interview walkthrough.
 - [AI-agent security learning path](docs/LEARNING_PATH.md) — nine code-linked modules, exercises,
   mastery questions, and an interview teach-back.
 - [Security model](docs/SECURITY_MODEL.md) — assets, attacker, TCB, invariants, claim matrix, and
@@ -224,7 +247,8 @@ CapGate does not currently claim:
 - real process, filesystem, syscall, network, or VM isolation;
 - a production sandbox runner or egress broker;
 - a live dual-model provider flow;
-- working LangGraph, OpenAI Agents SDK, or Pydantic AI integrations; or
+- LangGraph compatibility beyond the tested synchronous `ToolMessage` slice, or working OpenAI
+  Agents SDK and Pydantic AI integrations; or
 - production readiness or formally proven end-to-end security.
 
 ## License

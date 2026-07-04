@@ -161,7 +161,7 @@ formal-security claim.
 | OTel decision spans | Locally verified | An injected exporter receives bounded decision metadata without raw arguments or results. No live collector is claimed. |
 | Sandbox routing, egress rules, and quotas | Contract-tested only | Pure routing, canonical request policy, and fake-runner adapters are tested. Real process, filesystem, network, syscall, or VM isolation is not established. |
 | Dual-model quarantine | Unit-tested boundary only | Raw untrusted text stays with a tool-less extractor and the planner receives opaque references. No live provider or trusted value resolver is integrated. |
-| LangGraph adapter | Translation seam only | LangGraph-shaped calls translate into core events. No working LangGraph integration is claimed. |
+| LangGraph adapter | Locally verified narrow slice | A compiled `StateGraph` and real `ToolNode` use a thin wrapper around the framework-neutral synchronous mediator. Trusted labels are required for schema-normalized top-level arguments; multi-call turns, injected state/store/runtime arguments, custom schema transforms, and non-idempotent normalization fail closed. The demo covers standard `ToolMessage` calls only; broad compatibility is not claimed. |
 | Representative AgentDojo ASR and utility | **NOT YET MEASURED** | Retained local runs are wiring or utility smoke evidence, not representative protection results. |
 | Adaptive robustness | **NOT YET MEASURED** | The evidence comparator rejects incompatible or static reports; no adaptive attack campaign has been run. |
 

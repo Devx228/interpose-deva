@@ -2,15 +2,17 @@
 
 ## v0.1 milestone
 
-**DONE — research-prototype scope.** CapGate now has a hardened stdio MCP tool-call boundary, an
-offline end-to-end security demonstration, a public security model, a code-linked learning path,
-and CI configuration. The milestone is intentionally narrower than the original four-stage
+**DONE — research-prototype scope.** CapGate now has a hardened stdio MCP tool-call boundary, a
+framework-neutral synchronous mediator, a narrow real LangGraph `ToolNode` integration, two offline
+end-to-end demonstrations, a public security model, a complete beginner guide, a code-linked
+learning path, and CI configuration. The milestone remains narrower than the original four-stage
 research roadmap.
 
 The v0.1 claim is:
 
-> A fail-closed MCP tool-call mediation prototype with capability and source-to-sink policy,
-> persistent tool-definition pinning, and signed replayable audit receipts.
+> A fail-closed tool-call mediation prototype exposed through a hardened MCP path and a tested
+> LangGraph slice, with capability and source-to-sink policy, persistent MCP tool-definition
+> pinning, and signed replayable audit receipts.
 
 It is not a production release or evidence that every original stage is complete.
 
@@ -26,8 +28,8 @@ It is not a production release or evidence that every original stage is complete
   egress contracts, and gVisor/Firecracker request adapters are tested through pure logic or fake
   runners. Real isolation and controlled egress are not established.
 - Stage 3: **PARTIAL** — a provider-independent quarantine boundary, evidence-only adaptive
-  comparator, and LangGraph translation seam are unit-tested. No live dual-model flow, adaptive
-  attack run, red-team loop, or working framework integration exists.
+  comparator, and a narrow synchronous LangGraph `StateGraph`/`ToolNode` path are tested. No live
+  dual-model flow, adaptive attack run, red-team loop, or broad framework compatibility exists.
 
 ## Measured numbers
 
@@ -63,6 +65,16 @@ ASR or production-isolation evidence.
 The retained AgentDojo ground-truth reports cover one utility case, one mediated/replay-verified
 ALLOW, zero security cases, and therefore no ASR. They remain wiring evidence only.
 
+The second local proof runs without an LLM or network:
+
+```bash
+.venv/bin/python examples/langgraph_security_demo.py
+```
+
+It uses a real compiled `StateGraph` and `ToolNode`. A harmless status call and private read execute;
+the later private-plus-untrusted external send blocks under `flow.lethal_trifecta`; the sink handler
+is not invoked; and three signed receipts replay without retaining the raw marker.
+
 ## Security boundary hardening completed for v0.1
 
 - Secure-mode resource, prompt, sampling, and custom JSON-RPC methods no longer bypass the policy
@@ -94,8 +106,9 @@ ALLOW, zero security cases, and therefore no ASR. They remain wiring evidence on
 - Pure egress/canonicalization policy and locked session quota ledger.
 - Shell-free gVisor and Firecracker request-plan adapters through injected fake runners.
 - Tool-less quarantine extraction with planner-visible opaque references only.
-- Evidence-validating adaptive comparator and dependency-free LangGraph translation seam.
-- No-network offline security demo and pinned two-version CI workflow.
+- Evidence-validating adaptive comparator plus a real, thin LangGraph `ToolNode` wrapper around the
+  framework-neutral mediator.
+- No-network MCP and LangGraph security demos and pinned two-version CI workflow.
 
 ## Partial, interface-only, or unvalidated
 
@@ -116,15 +129,19 @@ ALLOW, zero security cases, and therefore no ASR. They remain wiring evidence on
 - Receipt append happens after an allowed side effect; a store failure cannot roll the action back.
   The retained chain also has no external anchor that proves its tail was not deleted.
 - The dual-model boundary has no live provider or trusted opaque-value resolver.
-- The LangGraph seam is not connected to LangGraph; OpenAI Agents SDK and Pydantic AI adapters are
-  absent.
+- The LangGraph slice is synchronous, serializes calls per mediator, supports the standard
+  `ToolMessage` path, and requires trusted labels for every top-level argument. It rejects
+  multi-call turns, injected state/store/runtime arguments, Pydantic v1 or custom-transform tool
+  schemas, non-idempotent normalization, and `Command` results; it has no sandbox executor,
+  streaming/checkpoint/interrupt proof, or broad compatibility claim. Each isolated graph run must
+  use a fresh mediator/context/session. OpenAI Agents SDK and Pydantic AI adapters are absent.
 - No live adaptive attack generator, automated red-team loop, or representative benchmark matrix is
   present.
 
 ## Current blockers
 
-- No agreed provider/model cost and time budget for representative AgentDojo control and CapGate
-  matrices.
+- No predeclared, authorized provider/model/task matrix exists for a representative AgentDojo
+  control and CapGate comparison.
 - This host is Darwin arm64; `runsc`, Firecracker, Kata, KVM, and privileged Linux conformance are
   unavailable.
 - No Linux runner/profile/egress-broker implementation exists to validate Stage 2 honestly.
@@ -135,8 +152,8 @@ ALLOW, zero security cases, and therefore no ASR. They remain wiring evidence on
 
 ## Ordered next steps
 
-1. Review and commit this v0.1 slice, push it, and confirm both CI matrix jobs and the offline demo
-   pass from the remote workflow.
+1. Review, commit, and push the LangGraph/guide slice, then confirm both CI matrix jobs and both
+   offline demos pass in the remote workflow.
 2. Choose a license and create a `v0.1.0` research-prototype tag/release with the explicit nonclaims
    from the README.
 3. Agree a benchmark provider/model/cost/time matrix, then run identical clean-revision undefended
@@ -145,7 +162,8 @@ ALLOW, zero security cases, and therefore no ASR. They remain wiring evidence on
    session taint.
 5. Move sandbox validation to a supported Linux host; implement the trusted runner and egress broker
    before claiming isolation.
-6. Add pin re-approval and shared multi-server provenance, then integrate one real framework adapter.
+6. Add pin re-approval and shared multi-server provenance, then generalize the tested LangGraph slice
+   only from concrete use cases.
 
 ## Local validation
 
@@ -154,8 +172,9 @@ ALLOW, zero security cases, and therefore no ASR. They remain wiring evidence on
 .venv/bin/mypy --strict src tests examples
 .venv/bin/pytest -q
 .venv/bin/python examples/offline_demo/run.py
+.venv/bin/python examples/langgraph_security_demo.py
 ```
 
-Current result: Ruff passed, strict mypy passed, pytest passed **358 tests**, and the offline demo
-completed with every control check true. CI is configured but has not been observed remotely for
-this unpushed worktree.
+Current result: Ruff passed, strict mypy passed across 83 source files, pytest passed **376 tests**,
+and both empty-environment offline demos completed with every asserted control true. CI is
+configured, but no remote result for this slice is claimed here.

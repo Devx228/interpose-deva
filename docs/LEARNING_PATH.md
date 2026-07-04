@@ -233,7 +233,10 @@ representative controls, ASR/utility evidence, and adaptive-comparison provenanc
 Read:
 
 - [`dual_llm/quarantine.py`](../src/capgate/dual_llm/quarantine.py)
+- [`engine/mediator.py`](../src/capgate/engine/mediator.py)
 - [`adapters/langgraph.py`](../src/capgate/adapters/langgraph.py)
+- [`examples/langgraph_security_demo.py`](../examples/langgraph_security_demo.py)
+- [`tests/integration/test_langgraph_integration.py`](../tests/integration/test_langgraph_integration.py)
 - [`bench/agentdojo_runner.py`](../bench/agentdojo_runner.py)
 - [`bench/adaptive.py`](../bench/adaptive.py)
 - [`bench/reports/README.md`](../bench/reports/README.md)
@@ -243,10 +246,12 @@ Run:
 ```bash
 .venv/bin/python -m pytest -q \
   tests/unit/test_quarantine.py \
+  tests/unit/test_mediator.py \
   tests/unit/test_langgraph_adapter.py \
   tests/unit/test_benchmark.py \
   tests/unit/test_adaptive.py \
-  tests/integration/test_agentdojo_runner.py
+  tests/integration/test_agentdojo_runner.py \
+  tests/integration/test_langgraph_integration.py
 ```
 
 Exercise: compare three claims—"one utility task passed," "one attack did not succeed," and "the
@@ -257,6 +262,7 @@ Mastery questions:
 
 - Why must untrusted extracted values stay opaque to the privileged planner?
 - Why is `VALIDATED` not equivalent to authorized tool execution?
+- Why must a LangGraph adapter label initial arguments and reject unmodeled injected state?
 - What provenance must match before two benchmark reports can support a defense delta?
 
 ## 9. Prove mastery with a teach-back
@@ -273,6 +279,7 @@ Run the offline demo:
 
 ```bash
 .venv/bin/python examples/offline_demo/run.py
+.venv/bin/python examples/langgraph_security_demo.py
 ```
 
 Then give a ten-minute explanation without notes:
@@ -282,7 +289,7 @@ Then give a ten-minute explanation without notes:
 3. Trace one allowed call and one blocked exfiltration attempt.
 4. Explain three design tradeoffs: conservative taint, first-seen pins, and gVisor versus Firecracker.
 5. State the nonclaims: no representative ASR, no adaptive result, no real Linux isolation, no live
-   dual-model flow, and no working framework integration.
+   dual-model flow, and no broad framework compatibility beyond the narrow tested LangGraph slice.
 
 Final exercise: change one policy rule, predict the affected tests, add one regression test for a
 new attack path, and explain why the test belongs at that layer. You understand the project when

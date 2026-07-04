@@ -24,6 +24,11 @@ dev = [
 bench = [
   "agentdojo==0.1.35",
 ]
+langgraph = [
+  "langchain-core==1.4.8",
+  "langgraph==1.2.7",
+  "langgraph-prebuilt==1.1.0",
+]
 
 [project.scripts]
 capgate = "capgate.cli:main"

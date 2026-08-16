@@ -14,15 +14,26 @@ class ReceiptSessionState:
     prev_receipt_hash: str | None
 
 
+_EMPTY_SESSION_STATE = ReceiptSessionState(next_seq=1, prev_receipt_hash=None)
+
+
 class JsonlReceiptStore:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._states: dict[str, ReceiptSessionState] = {}
+        self._scanned_size = -1
 
     def append(self, receipt: Receipt) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as handle:
             encoded = json.dumps(receipt.to_dict(), sort_keys=True, separators=(",", ":"))
             handle.write(encoded + "\n")
+        if self._scanned_size >= 0:
+            self._states[receipt.session_id] = ReceiptSessionState(
+                next_seq=receipt.seq + 1,
+                prev_receipt_hash=receipt.receipt_hash(),
+            )
+            self._scanned_size = self._current_size()
 
     def iter_receipts(self, session_id: str | None = None) -> list[Receipt]:
         if not self.path.exists():
@@ -44,11 +55,34 @@ class JsonlReceiptStore:
         return receipts
 
     def last_state(self, session_id: str) -> ReceiptSessionState:
-        receipts = self.iter_receipts(session_id)
-        if not receipts:
-            return ReceiptSessionState(next_seq=1, prev_receipt_hash=None)
-        last = receipts[-1]
-        return ReceiptSessionState(next_seq=last.seq + 1, prev_receipt_hash=last.receipt_hash())
+        """Return the next sequence and previous hash for a session.
+
+        Scanning the whole log on every append is quadratic over a session, so the tail
+        state is cached per session and advanced on write. The cache is discarded
+        whenever the file size no longer matches the last scan, so an append by another
+        writer forces a fresh read rather than a stale sequence number.
+        """
+
+        size = self._current_size()
+        if size != self._scanned_size:
+            self._rescan()
+        return self._states.get(session_id, _EMPTY_SESSION_STATE)
+
+    def _rescan(self) -> None:
+        states: dict[str, ReceiptSessionState] = {}
+        for receipt in self.iter_receipts():
+            states[receipt.session_id] = ReceiptSessionState(
+                next_seq=receipt.seq + 1,
+                prev_receipt_hash=receipt.receipt_hash(),
+            )
+        self._states = states
+        self._scanned_size = self._current_size()
+
+    def _current_size(self) -> int:
+        try:
+            return self.path.stat().st_size
+        except OSError:
+            return 0
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

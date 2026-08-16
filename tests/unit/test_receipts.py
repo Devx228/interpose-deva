@@ -153,6 +153,51 @@ def test_replay_rejects_absent_or_empty_session(tmp_path: Path) -> None:
         )
 
 
+def test_cached_tail_state_tracks_sessions_independently(tmp_path: Path) -> None:
+    signer = Ed25519Signer.generate()
+    store = JsonlReceiptStore(tmp_path / "receipts.jsonl")
+    writer = ReceiptWriter(store=store, signer=signer)
+
+    for session in ("session-1", "session-2", "session-1"):
+        writer.write_tool_call(
+            call_event=_call_event(session, "search", {"query": "q"}),
+            result_event=_result_event(session, "search", {"content": "r"}),
+            decision=STAGE0_ALLOW,
+        )
+
+    assert store.last_state("session-1").next_seq == 3
+    assert store.last_state("session-2").next_seq == 2
+    assert store.last_state("session-3").next_seq == 1
+    assert store.last_state("session-3").prev_receipt_hash is None
+
+
+def test_tail_state_is_rescanned_when_another_writer_appends(tmp_path: Path) -> None:
+    """A second store appending to the same log must not leave stale cached state."""
+
+    signer = Ed25519Signer.generate()
+    path = tmp_path / "receipts.jsonl"
+    first = ReceiptWriter(store=JsonlReceiptStore(path), signer=signer)
+    observer = JsonlReceiptStore(path)
+
+    first.write_tool_call(
+        call_event=_call_event("session-1", "search", {"query": "one"}),
+        result_event=_result_event("session-1", "search", {"content": "one"}),
+        decision=STAGE0_ALLOW,
+    )
+    assert observer.last_state("session-1").next_seq == 2
+
+    second = ReceiptWriter(store=JsonlReceiptStore(path), signer=signer)
+    appended = second.write_tool_call(
+        call_event=_call_event("session-1", "search", {"query": "two"}),
+        result_event=_result_event("session-1", "search", {"content": "two"}),
+        decision=STAGE0_ALLOW,
+    )
+
+    refreshed = observer.last_state("session-1")
+    assert refreshed.next_seq == 3
+    assert refreshed.prev_receipt_hash == appended.receipt_hash()
+
+
 def test_receipt_from_dict_validates_label_shape() -> None:
     with pytest.raises(ValueError, match="taint_labels"):
         Receipt.from_dict(

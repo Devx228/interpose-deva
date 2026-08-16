@@ -3,7 +3,7 @@ from __future__ import annotations
 from itertools import product
 
 from capgate.taint.labels import BOTTOM_LABEL, Confidentiality, Integrity, Label
-from capgate.taint.sources import SourceKind, classify_source
+from capgate.taint.sources import OriginKind, classify_source
 
 
 def _labels() -> tuple[Label, ...]:
@@ -48,13 +48,13 @@ def test_label_join_laws_hold_exhaustively() -> None:
 
 def test_external_content_sources_are_untrusted_by_default() -> None:
     untrusted_sources = {
-        SourceKind.MCP_TOOL_DESCRIPTION,
-        SourceKind.MCP_TOOL_RESULT,
-        SourceKind.WEB,
-        SourceKind.EMAIL,
-        SourceKind.FILE_UPLOAD,
-        SourceKind.RAG,
-        SourceKind.UNKNOWN,
+        OriginKind.MCP_TOOL_DESCRIPTION,
+        OriginKind.MCP_TOOL_RESULT,
+        OriginKind.WEB,
+        OriginKind.EMAIL,
+        OriginKind.FILE_UPLOAD,
+        OriginKind.RAG,
+        OriginKind.UNKNOWN,
     }
 
     assert all(
@@ -65,9 +65,9 @@ def test_external_content_sources_are_untrusted_by_default() -> None:
 
 def test_control_sources_are_trusted_only_when_explicitly_classified() -> None:
     trusted_sources = {
-        SourceKind.DIRECT_USER_INSTRUCTION,
-        SourceKind.SYSTEM_PROMPT,
-        SourceKind.SIGNED_CONFIG,
+        OriginKind.DIRECT_USER_INSTRUCTION,
+        OriginKind.SYSTEM_PROMPT,
+        OriginKind.SIGNED_CONFIG,
     }
 
     assert all(
@@ -77,7 +77,7 @@ def test_control_sources_are_trusted_only_when_explicitly_classified() -> None:
 
 def test_source_classification_preserves_explicit_confidentiality_and_tags() -> None:
     label = classify_source(
-        SourceKind.MCP_TOOL_RESULT,
+        OriginKind.MCP_TOOL_RESULT,
         confidentiality=Confidentiality.SECRET,
         source_tags=("mcp:secrets",),
     )

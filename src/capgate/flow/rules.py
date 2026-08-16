@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from capgate.engine.decision import Decision
 from capgate.flow.sinks import EXTERNAL_SINKS, SinkKind
-from capgate.flow.sources import SourceKind
+from capgate.flow.sources import DataSourceKind
 from capgate.taint.labels import Confidentiality, Integrity, Label
 
 LETHAL_TRIFECTA_RULE_ID = "flow.lethal_trifecta"
@@ -12,7 +12,7 @@ LETHAL_TRIFECTA_RULE_ID = "flow.lethal_trifecta"
 
 @dataclass(frozen=True)
 class DenyPair:
-    source: SourceKind
+    source: DataSourceKind
     sink: SinkKind
 
     @property
@@ -22,9 +22,9 @@ class DenyPair:
 
 
 DEFAULT_DENY_PAIRS = (
-    DenyPair(SourceKind.SECRETS, SinkKind.NETWORK_EXTERNAL),
-    DenyPair(SourceKind.UNTRUSTED_WEB, SinkKind.SHELL_EXEC),
-    DenyPair(SourceKind.CUSTOMER_PII, SinkKind.SLACK_PUBLIC),
+    DenyPair(DataSourceKind.SECRETS, SinkKind.NETWORK_EXTERNAL),
+    DenyPair(DataSourceKind.UNTRUSTED_WEB, SinkKind.SHELL_EXEC),
+    DenyPair(DataSourceKind.CUSTOMER_PII, SinkKind.SLACK_PUBLIC),
 )
 
 

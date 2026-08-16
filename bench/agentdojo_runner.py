@@ -27,7 +27,7 @@ from capgate.receipts.signer import Ed25519Signer, ReceiptWriter
 from capgate.receipts.store import JsonlReceiptStore
 from capgate.sandbox.base import RiskClass
 from capgate.taint.labels import Confidentiality
-from capgate.taint.sources import SourceKind, classify_source
+from capgate.taint.sources import OriginKind, classify_source
 
 Mode = Literal["undefended", "capgate"]
 PipelineKind = Literal["agentdojo", "ground-truth"]
@@ -453,7 +453,7 @@ def _stage1_pipeline(*, suite_name: str, tool_names: tuple[str, ...]) -> Decisio
         capabilities.append(CapabilityPattern.parse(capability))
         metadata[tool_name] = ToolMetadata(
             result_label=classify_source(
-                SourceKind.MCP_TOOL_RESULT,
+                OriginKind.MCP_TOOL_RESULT,
                 confidentiality=confidentiality,
                 source_tags=(f"agentdojo:{suite_name}:{tool_name}",),
             ),

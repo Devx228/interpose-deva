@@ -185,7 +185,7 @@ requires_approval: []
                 result_label=Label(
                     Confidentiality.SECRET,
                     Integrity.UNTRUSTED,
-                    frozenset({"private_demo", "untrusted_web"}),
+                    frozenset({"demo:private", "untrusted_web"}),
                 ),
                 risk_class=RiskClass.TRUSTED_DIRECT,
                 capability="read:private",

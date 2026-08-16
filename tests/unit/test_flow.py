@@ -6,7 +6,7 @@ import pytest
 
 from capgate.flow.rules import DEFAULT_DENY_PAIRS, check_flow, check_lethal_trifecta
 from capgate.flow.sinks import EXTERNAL_SINKS, SinkKind
-from capgate.flow.sources import SourceKind
+from capgate.flow.sources import DataSourceKind
 from capgate.taint.labels import Confidentiality, Integrity, Label
 
 
@@ -14,24 +14,24 @@ from capgate.taint.labels import Confidentiality, Integrity, Label
     ("source", "sink", "rule_id"),
     [
         (
-            SourceKind.SECRETS,
+            DataSourceKind.SECRETS,
             SinkKind.NETWORK_EXTERNAL,
             "flow.deny.secrets_to_network_external",
         ),
         (
-            SourceKind.UNTRUSTED_WEB,
+            DataSourceKind.UNTRUSTED_WEB,
             SinkKind.SHELL_EXEC,
             "flow.deny.untrusted_web_to_shell_exec",
         ),
         (
-            SourceKind.CUSTOMER_PII,
+            DataSourceKind.CUSTOMER_PII,
             SinkKind.SLACK_PUBLIC,
             "flow.deny.customer_pii_to_slack_public",
         ),
     ],
 )
 def test_default_source_to_sink_pairs_block_with_stable_rule_ids(
-    source: SourceKind,
+    source: DataSourceKind,
     sink: SinkKind,
     rule_id: str,
 ) -> None:
@@ -50,7 +50,7 @@ def test_static_pair_does_not_block_a_different_sink() -> None:
         Label(
             Confidentiality.PUBLIC,
             Integrity.TRUSTED,
-            frozenset({SourceKind.SECRETS.value}),
+            frozenset({DataSourceKind.SECRETS.value}),
         ),
         SinkKind.EMAIL_EXTERNAL,
     )
@@ -62,7 +62,7 @@ def test_static_pair_precedes_lethal_trifecta() -> None:
     label = Label(
         Confidentiality.SECRET,
         Integrity.UNTRUSTED,
-        frozenset({SourceKind.SECRETS.value}),
+        frozenset({DataSourceKind.SECRETS.value}),
     )
 
     decision = check_flow(label, SinkKind.NETWORK_EXTERNAL)
@@ -76,7 +76,7 @@ def test_deny_pairs_are_immutable() -> None:
     pair = DEFAULT_DENY_PAIRS[0]
 
     with pytest.raises(FrozenInstanceError):
-        type(pair).__setattr__(pair, "source", SourceKind.MEMORY)
+        type(pair).__setattr__(pair, "source", DataSourceKind.MEMORY)
 
 
 @pytest.mark.parametrize("confidentiality", [Confidentiality.INTERNAL, Confidentiality.SECRET])

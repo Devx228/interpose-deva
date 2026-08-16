@@ -6,7 +6,7 @@ from enum import StrEnum
 from capgate.taint.labels import Confidentiality, Integrity, Label
 
 
-class SourceKind(StrEnum):
+class OriginKind(StrEnum):
     DIRECT_USER_INSTRUCTION = "direct_user_instruction"
     SYSTEM_PROMPT = "system_prompt"
     SIGNED_CONFIG = "signed_config"
@@ -21,15 +21,15 @@ class SourceKind(StrEnum):
 
 _TRUSTED_SOURCES = frozenset(
     {
-        SourceKind.DIRECT_USER_INSTRUCTION,
-        SourceKind.SYSTEM_PROMPT,
-        SourceKind.SIGNED_CONFIG,
+        OriginKind.DIRECT_USER_INSTRUCTION,
+        OriginKind.SYSTEM_PROMPT,
+        OriginKind.SIGNED_CONFIG,
     }
 )
 
 
 def classify_source(
-    source: SourceKind,
+    source: OriginKind,
     *,
     confidentiality: Confidentiality = Confidentiality.PUBLIC,
     source_tags: Iterable[str] = (),
@@ -42,4 +42,4 @@ def classify_source(
     )
 
 
-UNKNOWN_LABEL = classify_source(SourceKind.UNKNOWN)
+UNKNOWN_LABEL = classify_source(OriginKind.UNKNOWN)

@@ -60,9 +60,33 @@ imprecise. It is the direct cause of both the 10% and the 50%.
 [`events.py`](../src/capgate/proxy/events.py) hardcodes `arg_provenance={}`, so per-value
 tracking there is not merely coarse — it does not exist.
 
-**The corpus is authored, not sampled.** 16 attacks written by the same person who wrote the
-defense. That demonstrates the encoded flows are contained; it says nothing about flows nobody
-thought of. No independent red team has attacked this.
+**The self-authored corpus is authored, not sampled.** 16 attacks written by the same person
+who wrote the defense. That demonstrates the encoded flows are contained; it says nothing about
+flows nobody thought of.
+
+This is now *partly* addressed. `python bench/agentdojo_attacks.py` replays 26 injection tasks
+authored by **AgentDojo's researchers**, using the `ground_truth()` call sequences they ship:
+
+| Corpus | Author of the attacks | Default | `--strict-integrity` |
+|---|---|---|---|
+| `bench/scenarios.py` | this repository | 75% (12/16) | 100% (16/16) |
+| AgentDojo injection tasks | AgentDojo researchers | **76.9%** (20/26) | **100%** (26/26) |
+
+The close agreement between the two rows is the useful part: if the self-authored corpus had
+been unconsciously fitted to the defense, it would score far better than a third-party one. It
+does not. Both also fail on the same class — destructive and state-changing actions — which is
+independent confirmation that the gap is structural rather than an artifact of who wrote the
+tests.
+
+The third-party corpus immediately earned its place by finding a **misconfiguration in our own
+tool metadata**: `get_webpage` was classified as a harmless read when fetching an
+attacker-supplied URL is outbound communication. That is exactly the failure mode §4 warns
+about, and no self-authored attack had caught it.
+
+Remaining honest limits: the attacks are third-party but the **tool security metadata is still
+ours**, no model runs (so this is not an AgentDojo attack-success rate and no utility is
+measured), 9 injection tasks ship no executable ground truth and are excluded, and **no human
+red team has attacked this.**
 
 **The scripted planner is not a model.** It obeys injections perfectly, which is the right
 worst-case assumption for measuring *enforcement*, but it means these numbers say nothing about

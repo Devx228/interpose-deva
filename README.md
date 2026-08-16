@@ -31,6 +31,30 @@ of the project: four destructive attacks slip through by default because the let
 rule is confidentiality-based and those attacks leak nothing — the action itself is the harm.
 Closing that gap costs five times the false blocks, because taint is currently session-wide.
 
+### Checked against attacks we did not write
+
+The corpus above was authored here, which caps what it can prove. So the same enforcement is
+also replayed against **26 injection tasks authored by AgentDojo's researchers**, using the
+`ground_truth()` call sequences they ship — `send_money`, `update_password`, `delete_file`,
+`remove_user_from_slack`, and more:
+
+```bash
+python bench/agentdojo_attacks.py          # third-party attacks, still no API key
+```
+
+| Corpus | Attacks written by | Default | `--strict-integrity` |
+|---|---|---|---|
+| `bench/scenarios.py` | this repository | 75% | 100% |
+| AgentDojo injection tasks | AgentDojo researchers | **76.9%** | **100%** |
+
+Those two rows agreeing is the point. A self-authored corpus that had been unconsciously fitted
+to the defense would score far better than a third-party one; this one doesn't, and both fail on
+the same structural class. The third-party set also caught a real misconfiguration in our own
+tool metadata that no self-authored attack had found.
+
+Still not an AgentDojo attack-success rate: no model runs, no utility is measured, and the tool
+security metadata is ours even though the attacks aren't.
+
 [**Where CapGate fails**](docs/LIMITATIONS.md) lists every uncontained attack, the structural
 limits, the assumptions that break it, and coverage against the OWASP LLM / MCP / ASI Top 10.
 Read it before the rest.

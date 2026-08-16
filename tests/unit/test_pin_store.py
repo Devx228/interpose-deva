@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -46,6 +47,10 @@ def test_sqlite_first_seen_pin_is_atomic_across_threads(tmp_path: Path) -> None:
     assert len({check.pinned_hash for check in checks}) == 1
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows has no POSIX permission bits; os.chmod only toggles the read-only flag",
+)
 def test_sqlite_store_uses_private_file_permissions(tmp_path: Path) -> None:
     path = tmp_path / "pins.sqlite3"
 
@@ -69,7 +74,10 @@ def test_symlink_store_is_rejected(tmp_path: Path) -> None:
     target = tmp_path / "target.sqlite3"
     target.touch()
     link = tmp_path / "pins.sqlite3"
-    link.symlink_to(target)
+    try:
+        link.symlink_to(target)
+    except OSError:  # Windows requires administrator rights or developer mode
+        pytest.skip("creating a symlink is not permitted in this environment")
 
     with pytest.raises(PinStoreError, match="unavailable"):
         SqliteToolPinStore(link)

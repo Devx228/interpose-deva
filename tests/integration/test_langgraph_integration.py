@@ -34,11 +34,13 @@ MARKER = "CAPGATE_LANGGRAPH_PRIVATE_MARKER_42b7d1"
 SCOPE = "offline LangGraph control validation, not model or production-isolation evidence"
 
 
-def test_real_langgraph_demo_blocks_exfiltration_without_api_or_network() -> None:
+def test_real_langgraph_demo_blocks_exfiltration_without_api_or_network(
+    credential_free_env: dict[str, str],
+) -> None:
     completed = subprocess.run(
         [sys.executable, str(DEMO)],
         cwd=REPO_ROOT,
-        env={},
+        env=credential_free_env,
         text=True,
         capture_output=True,
         check=False,

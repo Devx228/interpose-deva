@@ -120,15 +120,21 @@ def test_model_request_exposes_no_tool_interface() -> None:
 @pytest.mark.parametrize(
     "response",
     [
-        "not json",
-        "[]",
-        '{"invoice_id":"INV-42"}',
-        '{"invoice_id":"INV-42","urgent":true,"extra":1}',
-        '{"invoice_id":"INV-42","urgent":"yes"}',
-        '{"invoice_id":"INV-42","invoice_id":"INV-43","urgent":true}',
-        '{"invoice_id":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","urgent":true}',
-        '{"invoice_id":"INV-42","urgent":NaN}',
-        " " * 4_097,
+        pytest.param("not json", id="not-json"),
+        pytest.param("[]", id="array-not-object"),
+        pytest.param('{"invoice_id":"INV-42"}', id="missing-field"),
+        pytest.param('{"invoice_id":"INV-42","urgent":true,"extra":1}', id="extra-field"),
+        pytest.param('{"invoice_id":"INV-42","urgent":"yes"}', id="wrong-type"),
+        pytest.param(
+            '{"invoice_id":"INV-42","invoice_id":"INV-43","urgent":true}',
+            id="duplicate-key",
+        ),
+        pytest.param(
+            '{"invoice_id":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","urgent":true}',
+            id="string-over-max-length",
+        ),
+        pytest.param('{"invoice_id":"INV-42","urgent":NaN}', id="non-finite-number"),
+        pytest.param(" " * 4_097, id="over-max-response-bytes"),
     ],
 )
 def test_invalid_extractor_output_blocks_before_privileged_planner(response: str) -> None:
@@ -169,10 +175,10 @@ def test_extractor_provider_failure_is_sanitized_and_blocks() -> None:
 @pytest.mark.parametrize(
     "response",
     [
-        "not json",
-        '{"queue":"review"}',
-        '{"queue":"review","priority":true}',
-        '{"queue":"review","priority":2,"tool":"send"}',
+        pytest.param("not json", id="not-json"),
+        pytest.param('{"queue":"review"}', id="missing-field"),
+        pytest.param('{"queue":"review","priority":true}', id="wrong-type"),
+        pytest.param('{"queue":"review","priority":2,"tool":"send"}', id="extra-field"),
     ],
 )
 def test_invalid_planner_output_blocks(response: str) -> None:
@@ -211,9 +217,17 @@ def test_planner_provider_failure_is_sanitized_and_blocks() -> None:
 @pytest.mark.parametrize(
     ("trusted_request", "untrusted_text"),
     [
-        ("", "untrusted"),
-        ("x" * (MAX_TRUSTED_INPUT_CHARS + 1), "untrusted"),
-        ("trusted", "x" * (MAX_UNTRUSTED_INPUT_CHARS + 1)),
+        pytest.param("", "untrusted", id="empty-trusted-request"),
+        pytest.param(
+            "x" * (MAX_TRUSTED_INPUT_CHARS + 1),
+            "untrusted",
+            id="oversized-trusted-request",
+        ),
+        pytest.param(
+            "trusted",
+            "x" * (MAX_UNTRUSTED_INPUT_CHARS + 1),
+            id="oversized-untrusted-text",
+        ),
     ],
 )
 def test_invalid_or_oversized_inputs_block_without_model_calls(

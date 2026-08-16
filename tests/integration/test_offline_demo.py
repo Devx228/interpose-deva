@@ -12,11 +12,13 @@ MARKER = "CAPGATE_OFFLINE_PRIVATE_MARKER_7f3a9c"
 SCOPE = "offline deterministic control validation, not AgentDojo ASR or production isolation"
 
 
-def test_offline_cli_demo_proves_deterministic_controls() -> None:
+def test_offline_cli_demo_proves_deterministic_controls(
+    credential_free_env: dict[str, str],
+) -> None:
     completed = subprocess.run(
         [sys.executable, str(DEMO)],
         cwd=REPO_ROOT,
-        env={},
+        env=credential_free_env,
         text=True,
         capture_output=True,
         check=False,

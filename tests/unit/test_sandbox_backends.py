@@ -146,7 +146,7 @@ def test_firecracker_builds_read_only_networkless_generated_code_request(
     assert result.exit_code == 0
     assert len(runner.requests) == 1
     request = runner.requests[0]
-    assert request.argv[0].endswith("/firecracker")
+    assert Path(request.argv[0]).name == "firecracker"
     assert request.argv[1] == "--no-api"
     assert request.environment == ()
     assert request.workload_argv == ("/tool", "--safe")

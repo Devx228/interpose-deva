@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -157,6 +158,20 @@ def _replay_command(state: Path, receipt_log: Path, session_id: str) -> list[str
     ]
 
 
+def _child_environment() -> dict[str, str]:
+    """Return the smallest environment a child needs, carrying no ambient credentials.
+
+    The demo proves it runs with no API key, no `.env`, and no inherited secrets, so it
+    supplies an explicit environment instead of the parent's. POSIX needs nothing;
+    Windows needs `SYSTEMROOT` before `import asyncio` can load its extension modules.
+    """
+
+    if sys.platform != "win32":
+        return {}
+    system_root = os.environ.get("SYSTEMROOT")
+    return {"SYSTEMROOT": system_root} if system_root else {}
+
+
 def _run(
     command: list[str],
     *,
@@ -166,7 +181,7 @@ def _run(
         return subprocess.run(  # noqa: S603 - command is assembled only from demo constants
             command,
             cwd=REPO_ROOT,
-            env={},
+            env=_child_environment(),
             input=input_text,
             text=True,
             capture_output=True,

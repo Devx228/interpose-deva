@@ -1,4 +1,4 @@
-# CapGate build status — 2026-07-04 IST
+# CapGate build status — 2026-08-16 IST
 
 ## v0.1 milestone
 
@@ -32,6 +32,35 @@ It is not a production release or evidence that every original stage is complete
   dual-model flow, adaptive attack run, red-team loop, or broad framework compatibility exists.
 
 ## Measured numbers
+
+### Offline scenario corpus — measured 2026-08-16
+
+Produced by `python bench/run_scenarios.py`, report at
+[`bench/reports/scenario-corpus-latest.json`](bench/reports/scenario-corpus-latest.json).
+Deterministic, no API key, no network.
+
+| Metric | Value |
+|---|---|
+| Attack scenarios | 12 |
+| Benign scenarios | 10 |
+| Undefended attack success rate (control) | **100%** (12/12) |
+| Containment rate through CapGate | **100%** (12/12) |
+| False-block rate on benign work | **10%** (1/10) |
+
+Every attack runs undefended first as a control; all 12 breach without CapGate, so none is
+vacuous. Every attack is additionally required to block under the *specific* rule it was
+written to exercise, so a coincidental block does not count as containment. The single
+false block is `email-triage-then-public-reply`, refused because session-global taint marks
+the whole session untrusted after reading an injected email. Value-level provenance is
+expected to recover it.
+
+**This is not an ASR and is not comparable to published AgentDojo results.** It measures
+whether enforcement holds against a scripted planner that obeys every injected instruction
+perfectly — a worst-case attacker, not a sampled model. Because the corpus is authored rather
+than sampled, it shows the encoded flows are contained, not that all real-world flows are.
+See [`bench/reports/README.md`](bench/reports/README.md).
+
+### AgentDojo — still unmeasured, now out of scope
 
 - AgentDojo undefended representative baseline: **ASR=NOT YET MEASURED,
   utility=NOT YET MEASURED**.
@@ -142,9 +171,9 @@ is not invoked; and three signed receipts replay without retaining the raw marke
 
 - No predeclared, authorized provider/model/task matrix exists for a representative AgentDojo
   control and CapGate comparison.
-- This host is Darwin arm64; `runsc`, Firecracker, Kata, KVM, and privileged Linux conformance are
-  unavailable.
-- No Linux runner/profile/egress-broker implementation exists to validate Stage 2 honestly.
+- This host is Windows 11 (previously Darwin arm64); `runsc`, Firecracker, Kata, KVM, and
+  privileged Linux conformance are unavailable. Sandbox isolation is now out of scope rather
+  than blocked.
 - No external receipt checkpoint/key-custody design exists for log completeness and replacement
   resistance.
 - No repository license has been selected. The code should not be described as open source until the
@@ -175,6 +204,53 @@ is not invoked; and three signed receipts replay without retaining the raw marke
 .venv/bin/python examples/langgraph_security_demo.py
 ```
 
-Current result: Ruff passed, strict mypy passed across 83 source files, pytest passed **376 tests**,
-and both empty-environment offline demos completed with every asserted control true. CI is
-configured, but no remote result for this slice is claimed here.
+Current result on Windows 11 / Python 3.13.2: Ruff passed, strict mypy passed across 84 source
+files, pytest passed **419 tests with 3 skips**, and both credential-free offline demos completed
+with every asserted control true. The 3 skips are POSIX-only pin-store permission and symlink
+tests. CI is configured for `ubuntu-latest` and `windows-latest` on Python 3.11 and 3.14, but no
+remote result is claimed here.
+
+## Scope change — 2026-08-16
+
+The project is now **LangGraph-focused**. The MCP proxy is **frozen**: it works, it is tested, and
+it stays as the evidence that the engine is framework-neutral, but it is not being extended.
+gVisor, Firecracker, the egress broker, paid AgentDojo runs, and the OpenAI Agents SDK and
+Pydantic AI adapters are **out of scope**; risk-class routing and its no-downgrade rule remain.
+Measurement moves to a deterministic offline scenario corpus driven by a scripted compromised
+planner, reporting containment rate and false-block rate. See
+[`learning/09-roadmap.md`](learning/09-roadmap.md).
+
+### Completed since the last status
+
+- **Human-in-the-loop approval.** `REQUIRE_APPROVAL` now suspends a checkpointed LangGraph run
+  through `interrupt_for_approval` instead of silently blocking. A grant satisfies the
+  capability gate only: the pipeline re-runs with `approved=True` and every remaining check
+  still applies, so an approved call carrying private, untrusted-influenced data to an external
+  sink is still blocked. Only the exact boolean `True` approves, no approver configured still
+  blocks, and both outcomes are recorded as `policy.approval.granted` / `policy.approval.denied`
+  in the signed chain.
+- **Offline scenario corpus.** 12 attacks with undefended controls and 10 benign flows, each
+  attack required to block under the specific rule it exercises. Runs in CI.
+
+- **Cross-platform baseline.** Seven Windows-only test failures fixed — credential-free child
+  environments now carry `SYSTEMROOT`, POSIX-only permission and symlink tests skip with stated
+  reasons, a path assertion is separator-independent, and oversized parametrized test IDs are
+  labelled (Windows caps environment variables at 32767 characters, which pytest's
+  `PYTEST_CURRENT_TEST` exceeded). Windows added to the CI matrix.
+- **`source_tags` validation.** Previously any list of strings was accepted, so a typo such as
+  `secret` for `secrets` silently disabled a source-to-sink deny pair with no error. A bare tag
+  must now name a `DataSourceKind`; free-form breadcrumbs must be namespaced (`mcp:mail`).
+- **Enum disambiguation.** `taint.sources.SourceKind` is now `OriginKind`; `flow.sources.SourceKind`
+  is now `DataSourceKind`.
+- **Receipt-store tail caching.** `last_state` no longer re-parses the whole log per append;
+  the cache is invalidated whenever the file size differs from the last scan.
+- **Configurable deny pairs.** An optional `deny:` section in the tool-metadata file replaces the
+  built-in defaults; omitting it keeps them.
+
+### Known gap left deliberately unfixed
+
+`classify_source` injects an `OriginKind` value as a bare source tag, and some of those values are
+not `DataSourceKind` members — `OriginKind.WEB` yields `web`, which does not match the
+`untrusted_web` → `shell.exec` deny pair. Those tools rely on the lethal-trifecta rule alone.
+Mapping the enums would tighten enforcement and change which calls block, so it requires an
+explicit decision rather than a silent change.

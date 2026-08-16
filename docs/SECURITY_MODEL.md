@@ -140,8 +140,13 @@ unavailable sandbox routing, budget exhaustion, and internal decision errors. Ma
 control messages are also blocked before forwarding. Downstream tool and sandbox failures are
 converted to sanitized errors and signed BLOCK receipts when receipt storage remains available.
 
-`REQUIRE_APPROVAL` is non-executable in v0.1 because no approval workflow exists. It must not be
-treated as ALLOW.
+`REQUIRE_APPROVAL` does not execute unless trusted code resolves it. The LangGraph adapter can
+suspend the graph through `interrupt_for_approval` so a human answers; only the exact boolean
+`True` approves. A grant satisfies the capability gate only — the pipeline is re-evaluated with
+`approved=True` and every remaining check, including source-to-sink and lethal-trifecta rules,
+still applies. An approved call carrying private, untrusted-influenced data to an external sink
+is still blocked. With no approver configured, the verdict remains non-executable and must not
+be treated as ALLOW.
 
 Fail-closed does not mean transactional rollback. For a permitted downstream action, execution
 currently occurs before the final receipt append. A receipt-store failure after a side effect cannot

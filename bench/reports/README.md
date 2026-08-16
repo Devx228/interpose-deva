@@ -1,9 +1,37 @@
 # Benchmark report manifest
 
+## Valid for its own narrow claim (1)
+
+`scenario-corpus-latest.json` — produced by `python bench/run_scenarios.py`.
+
+This is **not** an AgentDojo result and must never be described as an ASR. It measures a
+different question, against a different attacker:
+
+| It measures | It does not measure |
+|---|---|
+| Whether enforcement holds when the planner is fully adversarial | Whether any particular model falls for an injection |
+| Containment: did the sink handler actually run with the secret? | Attack success rate on a published suite |
+| False-block rate: was legitimate work refused? | Utility on AgentDojo tasks |
+
+The planner is scripted and obeys every injected instruction perfectly, so it is a worst-case
+attacker rather than a sampled one. Every scenario also runs **undefended** as a control; an
+attack that does not breach undefended is reported as vacuous and fails the run, because a
+control that never succeeds proves nothing about the defense.
+
+Deterministic, no API key, no network. Because the corpus is authored rather than sampled, it
+shows that the encoded flows are contained — not that all real-world flows are.
+
+Read `containment_rate` and `false_block_rate` **together**. Containment alone is meaningless:
+refusing every call scores a perfect containment rate.
+
+---
+
+## AgentDojo reports
+
 AgentDojo `security_results` booleans mean that an injection succeeded. CapGate therefore computes
 ASR as their arithmetic mean, not `1 - mean`.
 
-None of the 16 checked-in JSON reports has a non-null code revision: two explicitly store
+None of the 16 checked-in AgentDojo JSON reports has a non-null code revision: two explicitly store
 `code_revision=null`, and fourteen older reports omit the field. None supports a representative
 ASR, representative utility, defense-effect, or adaptive-robustness claim. The current runner
 records a revision only when Git HEAD exists and the nonignored Git worktree is clean; missing Git,

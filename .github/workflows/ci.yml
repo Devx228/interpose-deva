@@ -13,12 +13,13 @@ concurrency:
 
 jobs:
   validate:
-    name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.14"]
 
     steps:
@@ -51,3 +52,6 @@ jobs:
 
       - name: Run offline LangGraph security demo
         run: python examples/langgraph_security_demo.py
+
+      - name: Run offline scenario corpus
+        run: python bench/run_scenarios.py

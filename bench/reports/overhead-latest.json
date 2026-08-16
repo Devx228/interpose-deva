@@ -1,0 +1,27 @@
+{
+  "decision_only": {
+    "mean_ms": 0.0373,
+    "median_ms": 0.0361,
+    "p95_ms": 0.0397
+  },
+  "iterations": 3000,
+  "mediated_end_to_end": {
+    "mean_ms": 1.5161,
+    "median_ms": 1.438,
+    "p95_ms": 1.8929
+  },
+  "note": "Measured against a synthetic in-process handler doing ~no work, so this is a worst-case ratio. A real tool call does I/O and a real agent turn waits on a model for hundreds of ms; the absolute per-call cost is the transferable number.",
+  "overhead_median_ms": 1.4377,
+  "platform": "win32",
+  "python": "3.13.2",
+  "receipt_only": {
+    "mean_ms": 1.5004,
+    "median_ms": 1.4197,
+    "p95_ms": 1.8814
+  },
+  "unmediated_handler": {
+    "mean_ms": 0.0004,
+    "median_ms": 0.0003,
+    "p95_ms": 0.0004
+  }
+}

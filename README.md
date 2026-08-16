@@ -253,6 +253,46 @@ whole session untrusted after reading an injected email. That imprecision is the
 limitation, and [value-level provenance](docs/design-notes/VALUE_LEVEL_PROVENANCE.md) is the
 proposed fix.
 
+## What it costs
+
+A security layer nobody deploys because it is slow protects nothing, so the overhead is
+measured and published:
+
+```bash
+python bench/overhead.py
+```
+
+| Stage | Median | p95 |
+|---|---|---|
+| Decision — policy, labels, flow rules, routing | **0.036 ms** | 0.040 ms |
+| Receipt — canonical JSON, 2× SHA-256, Ed25519 signature, append | 1.420 ms | 1.881 ms |
+| **Mediated end to end** | **1.438 ms** | 1.893 ms |
+
+The interesting split: **enforcement is essentially free at 36 microseconds — 97% of the cost
+is the audit trail**, and almost all of that is the signature and the disk append. If a
+deployment ever needed to trade auditability for latency, the numbers say exactly where the
+knob is.
+
+Against a real agent turn that waits on a model for hundreds of milliseconds, 1.4 ms is
+noise. Measured against a synthetic handler doing no work, so the *ratio* here is worst-case;
+the absolute per-call figure is the transferable number.
+
+## Verified algebraic properties
+
+The join is what makes taint impossible to launder, so its laws are property-tested over
+thousands of generated labels rather than hand-picked examples
+([`tests/unit/test_label_laws.py`](tests/unit/test_label_laws.py)):
+
+- **commutative** and **associative** — combination order and grouping cannot change a result,
+  so neither can be gamed
+- **idempotent** — re-joining a value with itself cannot dilute it
+- **monotonic** — confidentiality never drops, trust is never restored, no source tag is ever
+  lost, on any input pair
+- `(public, trusted, {})` is the **identity element**, and untrusted is **absorbing**
+
+If any of these failed, an attacker would have a way to combine values into a weaker label and
+the source-to-sink rules would be bypassable regardless of how they were written.
+
 ## What is backed today
 
 Local verification on 2026-08-16 used Windows 11 and Python 3.13.2:

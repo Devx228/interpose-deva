@@ -29,6 +29,10 @@ langgraph = [
   "langgraph==1.2.7",
   "langgraph-prebuilt==1.1.0",
 ]
+# Local-model demos only. No provider ever sits in the enforcement path.
+ollama = [
+  "langchain-ollama==1.1.0",
+]
 
 [project.scripts]
 capgate = "capgate.cli:main"

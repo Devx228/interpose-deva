@@ -16,6 +16,8 @@ class SinkKind(StrEnum):
     FILE_WRITE = "file.write"
 
 
+#: Sinks that can carry data *out* of the trust boundary. These are the exfiltration
+#: channels the lethal-trifecta rule guards.
 EXTERNAL_SINKS = frozenset(
     {
         SinkKind.NETWORK_EXTERNAL,
@@ -25,3 +27,9 @@ EXTERNAL_SINKS = frozenset(
         SinkKind.GITHUB_PR,
     }
 )
+
+#: Sinks that *change the world* rather than merely reveal it. Deleting records, writing
+#: files, executing shell commands, and moving money are harmful even when no confidential
+#: data is involved, so confidentiality-based rules cannot see them. Every sink other than
+#: `NONE` qualifies: a sink is by definition a destination with security impact.
+STATE_CHANGING_SINKS = frozenset(kind for kind in SinkKind if kind is not SinkKind.NONE)

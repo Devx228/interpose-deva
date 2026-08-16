@@ -85,7 +85,7 @@ def _tool_metadata(spec: ToolSpec) -> ToolMetadata:
     )
 
 
-def _pipeline(scenario: Scenario) -> DecisionPipeline:
+def _pipeline(scenario: Scenario, *, strict_integrity: bool = False) -> DecisionPipeline:
     return DecisionPipeline(
         {spec.name: _tool_metadata(spec) for spec in scenario.tools},
         policy=Policy(
@@ -94,6 +94,7 @@ def _pipeline(scenario: Scenario) -> DecisionPipeline:
             cannot=(),
             requires_approval=(),
         ),
+        require_trusted_for_state_change=strict_integrity,
     )
 
 
@@ -161,7 +162,7 @@ def _label_arguments(_request: Any, arguments: dict[str, Any]) -> dict[str, Labe
     return {name: BOTTOM_LABEL for name in arguments}
 
 
-def run_capgate(scenario: Scenario) -> ScenarioResult:
+def run_capgate(scenario: Scenario, *, strict_integrity: bool = False) -> ScenarioResult:
     recorder = _Recorder(scenario)
     result = ScenarioResult(
         scenario=scenario.name,
@@ -176,7 +177,7 @@ def run_capgate(scenario: Scenario) -> ScenarioResult:
         store = JsonlReceiptStore(Path(directory) / "receipts.jsonl")
         signer = Ed25519Signer.generate()
         mediator = ToolCallMediator(
-            pipeline=_pipeline(scenario),
+            pipeline=_pipeline(scenario, strict_integrity=strict_integrity),
             context=AgentContext(session_id),
             receipt_writer=ReceiptWriter(store=store, signer=signer),
         )
@@ -267,11 +268,15 @@ def _rate(numerator: int, denominator: int) -> float | None:
     return numerator / denominator if denominator else None
 
 
-def build_report(scenarios: Sequence[Scenario]) -> dict[str, Any]:
+def build_report(
+    scenarios: Sequence[Scenario],
+    *,
+    strict_integrity: bool = False,
+) -> dict[str, Any]:
     results: list[ScenarioResult] = []
     for scenario in scenarios:
         results.append(run_undefended(scenario))
-        results.append(run_capgate(scenario))
+        results.append(run_capgate(scenario, strict_integrity=strict_integrity))
 
     by_mode = {
         (item.scenario, item.mode): item for item in results
@@ -321,6 +326,7 @@ def build_report(scenarios: Sequence[Scenario]) -> dict[str, Any]:
     return {
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "harness": "scripted-compromised-planner",
+        "strict_integrity": strict_integrity,
         "scope": (
             "Offline deterministic containment measurement against a worst-case scripted "
             "attacker. Not comparable to published AgentDojo results, which measure whether "
@@ -355,6 +361,7 @@ def print_summary(report: dict[str, Any]) -> None:
     print("=" * 62)
     print(f"  attack scenarios          {report['attack_scenarios']}")
     print(f"  benign scenarios          {report['benign_scenarios']}")
+    print(f"  strict integrity rule     {'on' if report['strict_integrity'] else 'off'}")
     print()
     print(f"  undefended attack success {_percent(report['undefended_attack_success_rate'])}")
     print(f"  containment rate          {_percent(report['containment_rate'])}")
@@ -391,9 +398,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, help="Write the full JSON report here.")
     parser.add_argument("--json", action="store_true", help="Print the JSON report to stdout.")
+    parser.add_argument(
+        "--strict-integrity",
+        action="store_true",
+        help="Also block untrusted-influenced data from driving state-changing sinks.",
+    )
     args = parser.parse_args(argv)
 
-    report = build_report(ALL_SCENARIOS)
+    report = build_report(ALL_SCENARIOS, strict_integrity=args.strict_integrity)
 
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)

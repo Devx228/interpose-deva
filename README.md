@@ -6,26 +6,40 @@
 prompt-injected and stops the damaging action anyway — in ordinary code, at the tool boundary,
 with no classifier deciding whether text "looks malicious."
 
-It mediates LangGraph tool calls through a framework-neutral engine that enforces capability
-policy, information-flow labels, source-to-sink rules, and signed audit receipts. The same
-engine also drives a hardened MCP proxy, which is what keeps the core framework-independent.
+**The engine is framework-neutral.** `DecisionPipeline` and `ToolCallMediator` import nothing
+from any agent framework. LangGraph is one adapter — a drop-in `ToolNode` — and a hardened MCP
+proxy is another, driven by the identical engine. That is the proof, not the claim.
 
+## Measured, both columns
+
+26 offline scenarios: 16 attacks reproducing real incidents, 10 legitimate workflows. Every
+attack also runs undefended as a control, because an attack that fails without the defense
+proves nothing.
+
+| Mode | Containment | False-block rate |
+|---|---|---|
+| Default | **75%** (12/16) | **10%** (1/10) |
+| `--strict-integrity` | **100%** (16/16) | **50%** (5/10) |
+
+```bash
+python bench/run_scenarios.py                     # deterministic, no API key, no network
 ```
-22 offline scenarios — 12 attacks from real incidents, 10 legitimate workflows
 
-undefended attack success   100.0%    ← control: every attack genuinely works
-containment rate            100.0%    ← through CapGate, sink handler never ran
-false-block rate             10.0%    ← legitimate work wrongly refused
-```
+**Neither column is the answer alone.** Perfect containment is trivially achievable by refusing
+everything; a 50% false-block rate is unusable. The gap between those rows *is* the honest state
+of the project: four destructive attacks slip through by default because the lethal-trifecta
+rule is confidentiality-based and those attacks leak nothing — the action itself is the harm.
+Closing that gap costs five times the false blocks, because taint is currently session-wide.
 
-Deterministic, no API key, no network: `python bench/run_scenarios.py`. Read the last two
-together — refusing every call would score perfect containment. Details and caveats in
-[Measured containment](#measured-containment).
+[**Where CapGate fails**](docs/LIMITATIONS.md) lists every uncontained attack, the structural
+limits, the assumptions that break it, and coverage against the OWASP LLM / MCP / ASI Top 10.
+Read it before the rest.
 
 > **Scope:** a research prototype with locally verified controls, not a production security
-> boundary. The corpus is authored rather than sampled, so it shows the encoded flows are
-> contained — not all real-world flows. Representative AgentDojo ASR, adaptive robustness, and
-> real Linux sandbox isolation are **not measured or established**.
+> boundary. The corpus is authored by the same person who wrote the defense, so it shows the
+> encoded flows are contained — not that unknown flows are. No independent red team has attacked
+> it. Representative AgentDojo ASR, adaptive robustness, and real Linux sandbox isolation are
+> **not measured or established**.
 
 **New here?** Start with the [learning track](learning/README.md) — ten short chapters from
 first principles, each linked to the code that implements it.

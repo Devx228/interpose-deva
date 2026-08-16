@@ -29,10 +29,12 @@ class DecisionPipeline:
         tool_metadata: Mapping[str, ToolMetadata],
         policy: Policy | None = None,
         deny_pairs: tuple[DenyPair, ...] = DEFAULT_DENY_PAIRS,
+        require_trusted_for_state_change: bool = False,
     ) -> None:
         self._tool_metadata = dict(tool_metadata)
         self._policy = policy
         self._deny_pairs = deny_pairs
+        self._require_trusted_for_state_change = require_trusted_for_state_change
 
     def decide(
         self,
@@ -93,7 +95,12 @@ class DecisionPipeline:
             )
             if policy_decision.verdict != "ALLOW" and not approval_satisfied:
                 return policy_decision
-        flow_decision = check_flow(argument_label, metadata.sink, self._deny_pairs)
+        flow_decision = check_flow(
+            argument_label,
+            metadata.sink,
+            self._deny_pairs,
+            require_trusted_for_state_change=self._require_trusted_for_state_change,
+        )
         if flow_decision is not None:
             return flow_decision
         route = route_backend(metadata.risk_class)

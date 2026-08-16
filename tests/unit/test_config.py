@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from capgate.config import ConfigError, load_tool_metadata
+from capgate.config import ConfigError, load_deny_pairs, load_tool_metadata
+from capgate.flow.rules import DEFAULT_DENY_PAIRS, DenyPair
 from capgate.flow.sinks import SinkKind
+from capgate.flow.sources import DataSourceKind
 from capgate.sandbox.base import RiskClass
 from capgate.taint.labels import Confidentiality, Integrity, Label
 
@@ -112,6 +114,55 @@ def test_load_tool_metadata_rejects_invalid_shapes(tmp_path: Path, text: str) ->
 
 
 @pytest.mark.parametrize(
+    "tag",
+    [
+        pytest.param("secret", id="misspelled-secrets"),
+        pytest.param("untrusted-web", id="hyphen-instead-of-underscore"),
+        pytest.param("Secrets", id="wrong-case"),
+        pytest.param("totally_made_up", id="unknown-bare-tag"),
+        pytest.param("mcp:", id="namespace-without-value"),
+        pytest.param(":mail", id="namespace-without-prefix"),
+    ],
+)
+def test_unknown_bare_source_tag_is_rejected(tmp_path: Path, tag: str) -> None:
+    """A bare tag that names no known data source would silently disable a deny pair."""
+
+    path = _write(
+        tmp_path,
+        "tools:\n  example:\n    capability: read:web\n"
+        "    confidentiality: public\n    integrity: trusted\n"
+        "    risk_class: trusted_direct\n"
+        f'    source_tags: ["{tag}"]\n',
+    )
+
+    with pytest.raises(ConfigError, match="source_tags"):
+        load_tool_metadata(path)
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        pytest.param("secrets", id="taxonomy-value"),
+        pytest.param("untrusted_web", id="taxonomy-value-with-underscore"),
+        pytest.param("mcp:mail", id="namespaced"),
+        pytest.param("agentdojo:workspace:send_email", id="multi-segment-namespace"),
+    ],
+)
+def test_known_and_namespaced_source_tags_are_accepted(tmp_path: Path, tag: str) -> None:
+    path = _write(
+        tmp_path,
+        "tools:\n  example:\n    capability: read:web\n"
+        "    confidentiality: public\n    integrity: trusted\n"
+        "    risk_class: trusted_direct\n"
+        f'    source_tags: ["{tag}"]\n',
+    )
+
+    metadata = load_tool_metadata(path)
+
+    assert metadata["example"].result_label.source_tags == frozenset({tag})
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
     [
         ("capability", "not-a-capability"),
@@ -158,3 +209,58 @@ def test_config_error_does_not_echo_secret_content(tmp_path: Path) -> None:
         load_tool_metadata(path)
 
     assert secret not in str(raised.value)
+
+
+_MINIMAL_TOOL = (
+    "tools:\n  example:\n    capability: read:web\n"
+    "    confidentiality: public\n    integrity: trusted\n"
+    "    risk_class: trusted_direct\n"
+)
+
+
+def test_omitted_deny_section_keeps_the_built_in_defaults(tmp_path: Path) -> None:
+    assert load_deny_pairs(_write(tmp_path, _MINIMAL_TOOL)) == DEFAULT_DENY_PAIRS
+
+
+def test_deny_section_replaces_the_defaults(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        _MINIMAL_TOOL + "deny:\n  - from: pii\n    to: github.pr\n",
+    )
+
+    assert load_deny_pairs(path) == (DenyPair(DataSourceKind.PII, SinkKind.GITHUB_PR),)
+
+
+def test_explicitly_empty_deny_section_is_honoured(tmp_path: Path) -> None:
+    """An operator may remove every static pair; the trifecta rule still applies."""
+
+    assert load_deny_pairs(_write(tmp_path, _MINIMAL_TOOL + "deny: []\n")) == ()
+
+
+@pytest.mark.parametrize(
+    "deny",
+    [
+        pytest.param("deny:\n  - from: secrets\n", id="missing-to"),
+        pytest.param("deny:\n  - to: shell.exec\n", id="missing-from"),
+        pytest.param(
+            "deny:\n  - from: secrets\n    to: shell.exec\n    why: nope\n",
+            id="extra-field",
+        ),
+        pytest.param("deny:\n  - from: secret\n    to: shell.exec\n", id="unknown-source"),
+        pytest.param("deny:\n  - from: secrets\n    to: shell.exe\n", id="unknown-sink"),
+        pytest.param("deny: {}\n", id="not-a-list"),
+        pytest.param(
+            "deny:\n  - from: secrets\n    to: shell.exec\n"
+            "  - from: secrets\n    to: shell.exec\n",
+            id="duplicate-entry",
+        ),
+    ],
+)
+def test_invalid_deny_sections_are_rejected(tmp_path: Path, deny: str) -> None:
+    with pytest.raises(ConfigError):
+        load_deny_pairs(_write(tmp_path, _MINIMAL_TOOL + deny))
+
+
+def test_unknown_root_key_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError):
+        load_tool_metadata(_write(tmp_path, _MINIMAL_TOOL + "extra: 1\n"))

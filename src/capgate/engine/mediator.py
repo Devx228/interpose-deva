@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from threading import Lock
 from typing import Generic, TypeVar, cast
 
@@ -48,6 +48,7 @@ class ToolCallMediator:
         *,
         result_to_json: Callable[[ResultT], JsonValue] | None = None,
         argument_labels: Mapping[str, Label] | None = None,
+        approve: Callable[[Decision], bool] | None = None,
     ) -> MediationOutcome[ResultT]:
         """Mediate one direct tool call and return a sanitized outcome.
 
@@ -55,10 +56,19 @@ class ToolCallMediator:
         Framework-specific results require an explicit ``result_to_json`` projection
         for receipts and provenance. Every non-empty argument set requires matching
         provenance IDs on the event and trusted labels in ``argument_labels``.
+
+        ``approve`` is trusted code that resolves a ``REQUIRE_APPROVAL`` verdict. Without
+        it, approval-required calls are refused, because a verdict nobody can answer must
+        never behave like an allow. It is called before anything executes, so exceptions
+        are deliberately **not** caught: a framework may implement approval by suspending
+        the run (LangGraph raises to pause), and swallowing that would turn a pause into a
+        silent decision. Nothing has executed at that point, so propagating is safe.
         """
 
         with self._lock:
-            return self._mediate_locked(event, execute, result_to_json, argument_labels)
+            return self._mediate_locked(
+                event, execute, result_to_json, argument_labels, approve
+            )
 
     def _mediate_locked(
         self,
@@ -66,6 +76,7 @@ class ToolCallMediator:
         execute: Callable[[], ResultT],
         result_to_json: Callable[[ResultT], JsonValue] | None,
         argument_labels: Mapping[str, Label] | None,
+        approve: Callable[[Decision], bool] | None = None,
     ) -> MediationOutcome[ResultT]:
         if self._failed_closed:
             return self._rejected(
@@ -96,6 +107,8 @@ class ToolCallMediator:
             return self._rejected(event, argument_label_error, execution_started=False)
 
         decision = self._pipeline.decide(self._context, event)
+        if decision.verdict == "REQUIRE_APPROVAL" and approve is not None:
+            decision = self._resolve_approval(event, decision, approve)
         if decision.verdict != "ALLOW":
             return self._rejected(event, decision, execution_started=False)
 
@@ -191,6 +204,35 @@ class ToolCallMediator:
                 value=None,
             )
         return MediationOutcome(decision=decision, executed=True, value=result)
+
+    def _resolve_approval(
+        self,
+        event: ToolCallEvent,
+        decision: Decision,
+        approve: Callable[[Decision], bool],
+    ) -> Decision:
+        """Ask trusted code to resolve an approval-required call.
+
+        A grant satisfies the capability gate only. The pipeline is re-run with
+        ``approved=True`` so every later check still applies — an approved call whose data
+        would violate a flow rule is still blocked. Approval is permission to act, never
+        permission to leak.
+        """
+
+        if approve(decision) is not True:
+            return _decision(
+                "approval was refused for this tool call",
+                "policy.approval.denied",
+                decision.labels,
+            )
+        approved = self._pipeline.decide(self._context, event, approved=True)
+        if approved.verdict != "ALLOW":
+            return approved
+        return replace(
+            approved,
+            reason=f"{approved.reason}; executed after explicit approval",
+            rule_id="policy.approval.granted",
+        )
 
     def _rejected(
         self,

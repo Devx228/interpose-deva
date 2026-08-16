@@ -5,7 +5,7 @@ import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 
-from capgate.config import CapgatePaths, ConfigError, load_tool_metadata
+from capgate.config import CapgatePaths, ConfigError, load_deny_pairs, load_tool_metadata
 from capgate.engine.pipeline import DecisionPipeline
 from capgate.policy import PolicyError, load_policy
 from capgate.proxy.server import run_stdio_proxy
@@ -93,4 +93,8 @@ def build_decision_pipeline(
         policy = load_policy(policy_file)
     except OSError:
         raise ConfigError("unable to read policy file") from None
-    return DecisionPipeline(load_tool_metadata(tool_metadata_file), policy=policy)
+    return DecisionPipeline(
+        load_tool_metadata(tool_metadata_file),
+        policy=policy,
+        deny_pairs=load_deny_pairs(tool_metadata_file),
+    )

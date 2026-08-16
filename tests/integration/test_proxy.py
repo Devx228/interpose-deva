@@ -44,8 +44,14 @@ class FailingDownstream:
 
 
 class FailingDecisionPipeline(DecisionPipeline):
-    def decide(self, context: AgentContext, event: ToolCallEvent) -> Decision:
-        _ = context, event
+    def decide(
+        self,
+        context: AgentContext,
+        event: ToolCallEvent,
+        *,
+        approved: bool = False,
+    ) -> Decision:
+        _ = context, event, approved
         raise RuntimeError("sensitive internal failure")
 
 

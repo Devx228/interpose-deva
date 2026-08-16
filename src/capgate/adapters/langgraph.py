@@ -59,6 +59,33 @@ def require_allowed(decision: Decision) -> None:
         raise ToolCallRejected(decision)
 
 
+def interrupt_for_approval(decision: Decision) -> bool:
+    """Pause the graph with LangGraph's `interrupt` and return the human's answer.
+
+    Requires a checkpointer on the compiled graph; resume with
+    `Command(resume=True)` to approve. Only the exact boolean `True` approves — any other
+    resume value, including a truthy string, denies. A human answering an approval prompt
+    with something the runtime did not expect must never be read as consent.
+
+    Only bounded decision metadata is surfaced. Raw arguments never reach the prompt,
+    because an approval UI is one more place a secret could be copied to.
+    """
+
+    from langgraph.types import interrupt
+
+    answer = interrupt(
+        {
+            "capgate": {
+                "verdict": decision.verdict,
+                "rule_id": decision.rule_id,
+                "reason": decision.reason,
+                "labels": sorted(decision.labels),
+            }
+        }
+    )
+    return answer is True
+
+
 def build_secure_tool_node(
     tools: Sequence[BaseTool | Callable[..., Any]],
     *,
@@ -66,8 +93,14 @@ def build_secure_tool_node(
     session_id: str,
     label_arguments: Callable[[ToolCallRequest, JsonObject], Mapping[str, Label]],
     server: str = "langgraph",
+    approve: Callable[[Decision], bool] | None = None,
 ) -> ToolNode:
-    """Build a single-call LangGraph ToolNode whose labeled calls pass through CapGate."""
+    """Build a single-call LangGraph ToolNode whose labeled calls pass through CapGate.
+
+    ``approve`` resolves `REQUIRE_APPROVAL` verdicts. Pass `interrupt_for_approval` to
+    pause the graph for a human, or leave it `None` to keep refusing such calls. A grant
+    satisfies only the capability gate; flow rules still run afterwards.
+    """
 
     try:
         from langchain_core.messages import ToolCall, ToolMessage
@@ -121,6 +154,7 @@ def build_secure_tool_node(
                 expected_call_id=call.call_id,
             ),
             argument_labels=argument_labels,
+            approve=approve,
         )
         if outcome.decision.verdict == "ALLOW":
             if outcome.value is None:

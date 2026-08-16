@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 
 from capgate.engine.context import AgentContext
 from capgate.engine.decision import Decision
-from capgate.flow.rules import check_flow, label_strings
+from capgate.flow.rules import DEFAULT_DENY_PAIRS, DenyPair, check_flow, label_strings
 from capgate.flow.sinks import SinkKind
 from capgate.policy.enforce import enforce
 from capgate.policy.model import Policy
@@ -28,14 +28,31 @@ class DecisionPipeline:
         self,
         tool_metadata: Mapping[str, ToolMetadata],
         policy: Policy | None = None,
+        deny_pairs: tuple[DenyPair, ...] = DEFAULT_DENY_PAIRS,
     ) -> None:
         self._tool_metadata = dict(tool_metadata)
         self._policy = policy
+        self._deny_pairs = deny_pairs
 
-    def decide(self, context: AgentContext, event: ToolCallEvent) -> Decision:
+    def decide(
+        self,
+        context: AgentContext,
+        event: ToolCallEvent,
+        *,
+        approved: bool = False,
+    ) -> Decision:
+        """Decide one tool call.
+
+        ``approved`` records that a trusted human has authorized this specific call. It
+        satisfies **only** the capability gate — a `REQUIRE_APPROVAL` verdict becomes
+        eligible to continue. Every later check still runs, so an approved call whose data
+        would violate a flow rule is still blocked. Approval is permission to act, never
+        permission to leak.
+        """
+
         argument_label = context.label_for_call(tuple(event.arg_provenance.values()))
         try:
-            return self._decide(event, argument_label)
+            return self._decide(event, argument_label, approved=approved)
         except Exception:
             return Decision(
                 verdict="BLOCK",
@@ -44,7 +61,13 @@ class DecisionPipeline:
                 labels=label_strings(argument_label),
             )
 
-    def _decide(self, event: ToolCallEvent, argument_label: Label) -> Decision:
+    def _decide(
+        self,
+        event: ToolCallEvent,
+        argument_label: Label,
+        *,
+        approved: bool = False,
+    ) -> Decision:
         metadata = self._tool_metadata.get(event.tool)
         if metadata is None:
             return Decision(
@@ -65,9 +88,12 @@ class DecisionPipeline:
                 enforce(self._policy, metadata.capability),
                 labels=label_strings(argument_label),
             )
-            if policy_decision.verdict != "ALLOW":
+            approval_satisfied = (
+                approved and policy_decision.verdict == "REQUIRE_APPROVAL"
+            )
+            if policy_decision.verdict != "ALLOW" and not approval_satisfied:
                 return policy_decision
-        flow_decision = check_flow(argument_label, metadata.sink)
+        flow_decision = check_flow(argument_label, metadata.sink, self._deny_pairs)
         if flow_decision is not None:
             return flow_decision
         route = route_backend(metadata.risk_class)

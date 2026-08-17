@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -185,7 +186,7 @@ def run_agentdojo(
                 model=model,
                 client_kwargs=client_kwargs,
             )
-            pipeline.name = model
+            pipeline.name = _filesystem_safe_name(model)
 
     audit_state: AuditState | None = None
     if mode == "capgate":
@@ -340,6 +341,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_report(report, args.out)
     print(json.dumps(asdict(report), sort_keys=True))
     return 0 if report.status == "completed" else 2
+
+
+_UNSAFE_NAME_CHARS = re.compile(r'[<>:"/\\|?*]')
+
+
+def _filesystem_safe_name(name: str) -> str:
+    """Return a pipeline name usable as a directory component on every platform.
+
+    AgentDojo writes results to `<logdir>/<pipeline.name>/...`, so a model identifier like
+    `qwen2.5:7b` becomes an invalid path on Windows. Only the on-disk name is sanitised;
+    the model string sent to the provider is untouched.
+    """
+
+    return _UNSAFE_NAME_CHARS.sub("-", name)
 
 
 def _now() -> str:
@@ -751,7 +766,7 @@ def _build_openai_compatible_pipeline(
     from agentdojo.types import ChatAssistantMessage, text_content_block_from_string
 
     class OpenAICompatibleLLM(BasePipelineElement):
-        name = model
+        name = _filesystem_safe_name(model)
 
         def __init__(self) -> None:
             self.client = openai_module.OpenAI(**client_kwargs)

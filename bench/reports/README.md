@@ -79,3 +79,21 @@ Their one-case values cannot establish a baseline or CapGate effect.
 - `agentdojo-oci-mini-undefended-current-smoke.json`
 - `agentdojo-oci-mini-user24-control.json`
 - `agentdojo-oci-nano-user24-control.json`
+
+## Local-model AgentDojo runs — valid as a negative result only (2)
+
+- `agentdojo-local-qwen25-7b-utility.json`
+- `agentdojo-local-qwen25-7b-undefended.json`
+
+Real AgentDojo runs against `qwen2.5:7b` served by Ollama's OpenAI-compatible endpoint.
+Measured 2026-08-17: **utility 0.20** over 5 user tasks, and **ASR 0.00** over 12 security
+cases with the `direct` attack.
+
+These establish exactly one thing, and it is a negative: the undefended attack never succeeds,
+so no defense effect is measurable against this model. They must not be quoted as evidence that
+CapGate reduces ASR — there is no baseline to reduce. The cause is capability, not enforcement:
+0.20–0.33 utility against a published GPT-4o baseline near 84% means the agent mostly cannot
+complete the benign task either.
+
+Useful for: showing the harness runs end to end against a local model, and justifying why a
+paid-API run is required for a defense-effect claim.

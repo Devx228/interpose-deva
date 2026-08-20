@@ -32,25 +32,26 @@ Windows is now in the CI matrix so none of these can come back.
 ## Measured containment
 
 ```bash
-python bench/run_scenarios.py
+python bench/run_scenarios.py --matrix
 ```
 
 ```
-attack scenarios          12
-benign scenarios          10
-
-undefended attack success 100.0%
-containment rate          100.0%
-false-block rate           10.0%
+cell                 containment   false-block
+session/default            75.0%         18.2%
+session/strict            100.0%         54.5%
+value/default              75.0%          9.1%
+value/strict              100.0%          9.1%
 ```
 
-Corpus in [`bench/scenarios.py`](../bench/scenarios.py), harness in
-[`bench/run_scenarios.py`](../bench/run_scenarios.py), invariants enforced by
+(27 scenarios: 16 attacks, 11 benign.) Corpus in [`bench/scenarios.py`](../bench/scenarios.py),
+harness in [`bench/run_scenarios.py`](../bench/run_scenarios.py), invariants enforced by
 [`tests/integration/test_scenarios.py`](../tests/integration/test_scenarios.py) and CI.
 
-The one false block is `email-triage-then-public-reply`: read an injected email, send a harmless
-reply. Session-global taint marks the entire session untrusted, so the reply is refused. That is
-the weakness below, showing up as a number.
+The session rows show the weakness below as numbers: closing the destructive-action gap
+(`strict`) used to refuse half the benign corpus, because session-global taint gave the rule
+no precision to work with. The value rows are the fix — chapter
+[11](11-value-level-provenance.md) — and the one remaining false block is structural by
+construction, not an accident.
 
 ## What is genuinely built and tested
 
@@ -90,26 +91,27 @@ grep -rn "EgressPolicy\|CrossServerIsolation\|configure_telemetry" --include=*.p
 Not a crisis — the components are correct and tested. But "we have egress control" and "egress
 control runs on every call" are very different claims, and only the second one counts.
 
-## The one real weakness
+## The one real weakness — now addressed, with honest edges
 
-Covered in [04](04-taint-labels.md), restated here because it drives the whole roadmap.
+**Taint was session-global.** [`AgentContext`](../src/capgate/engine/context.py) holds a single
+`influence` label for the entire session; every raw tool result joins into it, and joins only
+move one direction — so the first `secret / untrusted` result used to poison the session
+**permanently**. Safe (it over-approximates and never misses a real attack), but a control
+that blocks legitimate work gets switched off, and a switched-off control provides zero
+security.
 
-**Taint is session-global.** [`AgentContext`](../src/capgate/engine/context.py) holds a single
-`influence` label for the entire session. Every tool result joins into it, and joins only move
-one direction — so the first `secret / untrusted` result poisons the session **permanently**.
+Value-level provenance (chapter [11](11-value-level-provenance.md)) fixed this where it can be
+fixed soundly: pass-through values travel behind unforgeable opaque references carrying exact
+lineage, and the false-block cost of the strict integrity rule fell from 54.5% to 9.1% with
+containment held at 100%.
 
-Consequences:
+The edges that remain, deliberately:
 
-- Every later external call blocks, whether or not it touches that data
-- In the MCP path it is worse: [`events.py:106`](../src/capgate/proxy/events.py#L106) hardcodes
-  `arg_provenance={}`, so per-value tracking is entirely absent and `label_for_call` reduces to
-  the session influence alone
-- Any utility number measured today is dominated by false blocks
-
-It is **safe** — it over-approximates and never misses a real attack. It is not **good**.
-
-A security control that blocks legitimate work gets switched off, and a switched-off control
-provides zero security. This is the difference between a demo and a system.
+- Session influence is still the default and the fallback — precision is opt-in per tool
+- References are pass-through only; comprehension-bound flows still inherit session taint,
+  and one corpus scenario stays false-blocked in every mode to keep that cost visible
+- The MCP path is untouched: [`events.py`](../src/capgate/proxy/events.py) hardcodes
+  `arg_provenance={}`, so the proxy always runs session-global
 
 ## Recently fixed
 

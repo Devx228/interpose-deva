@@ -151,6 +151,36 @@ The adapter translates a LangGraph tool call into a neutral event and translates
 back. That's it. The proof it worked is that the same engine also drives an MCP proxy without
 either knowing about the other.
 
+## "You said session taint was your weakness. What did you do about it?"
+
+Fixed it where it can be fixed soundly, and measured the fix.
+
+The problem: one influence label per session, so one untrusted read poisoned everything after
+it. That made my strict integrity rule — which closes the destructive-action gap — cost half
+the benign corpus. The two critiques of the project pulled against each other because they
+shared a cause.
+
+The fix is borrowed from CaMeL: pass-through tool results are stored behind unforgeable random
+tokens, and the planner receives the token instead of the value. Lineage travels structurally,
+outside the model — no encoding trick can launder it, because a token either names a stored
+value or it names nothing. When a token appears in a later argument, I resolve it and the
+argument's label is exactly the stored label. Result: 100% containment with the strict rule at
+a 9% false-block rate, down from 54%. Both numbers, same corpus, frozen as tests.
+
+The two follow-up questions I'd expect, answered:
+
+*Why is it sound to skip the session influence join for referenced results?* Because influence
+models what the planner has seen, and the planner only ever saw a random token. A value it
+never saw can't have steered it and can't be retyped from memory. And the converse holds — if
+the planner did read untrusted content raw, influence still joins into every call, which is
+why an injected planner passing a referenced secret outward is still blocked.
+
+*What can't it do?* The planner can't read a referenced value, so any task that needs
+comprehension of untrusted content still inherits session taint. I keep one benign scenario
+false-blocked in every mode to make that cost visible, with a test asserting it's never
+quietly recovered. Fixing that class soundly needs a quarantined reader — a second model that
+can read but has no tools — which I've scoped but not built.
+
 ## "What would you do with three more months?"
 
 External anchoring for the receipt chain — tail deletion is my biggest audit gap.
@@ -177,6 +207,11 @@ routing contracts and a hard no-downgrade rule, but I don't claim isolation I co
 The pattern in every good answer above: **state the design, then volunteer its limit.** Nothing
 here claims to solve prompt injection — it claims to contain the damage and is explicit about
 what stays exposed.
+
+---
+
+Next: [11 — Value-level provenance](11-value-level-provenance.md), the deep dive behind the
+session-taint answer above.
 
 Engineers who name their own residual risk get trusted with bigger systems. That habit is worth
 more than any single feature in this repo.

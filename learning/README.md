@@ -22,6 +22,7 @@ The order matters. Each part depends on the one before it.
 | 08 | [Where we stand](08-where-we-stand.md) | Real test baseline, what's built, the one real weakness |
 | 09 | [Roadmap](09-roadmap.md) | What we're building over the next six weeks, and why |
 | 10 | [Interview answers](10-interview-answers.md) | Questions you will be asked, and how to answer them |
+| 11 | [Value-level provenance](11-value-level-provenance.md) | How the one real weakness was fixed, measured, and what the fix refuses to do |
 
 ## The one-paragraph version
 
@@ -50,20 +51,24 @@ See [07 — Code walkthrough](07-code-walkthrough.md) for what each line of that
 ## See the numbers
 
 ```bash
-python bench/run_scenarios.py
+python bench/run_scenarios.py --matrix
 ```
 
-22 deterministic scenarios — 12 attacks drawn from real incidents, 10 pieces of legitimate work.
-Each attack runs undefended first as a control, then through CapGate:
+27 deterministic scenarios — 16 attacks drawn from real incidents, 11 pieces of legitimate
+work. Each attack runs undefended first as a control, then through CapGate, in all four
+provenance × integrity combinations:
 
 ```
-undefended attack success 100.0%     <- proves every attack is real
-containment rate          100.0%
-false-block rate           10.0%
+cell                 containment   false-block
+session/default            75.0%         18.2%
+session/strict            100.0%         54.5%
+value/default              75.0%          9.1%
+value/strict              100.0%          9.1%
 ```
 
-Read those bottom two together. Containment alone is meaningless — refusing every call would
-score a perfect 100%. See [09 — Roadmap](09-roadmap.md) for how the harness works.
+Read each row's two numbers together — containment alone is meaningless, since refusing every
+call scores a perfect 100%. The bottom row is the project's central result; chapter
+[11](11-value-level-provenance.md) explains how it was earned.
 
 ## Related docs elsewhere in the repo
 

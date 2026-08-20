@@ -70,32 +70,23 @@ One finding deliberately *not* fixed: the two enums still do not map onto each o
 `OriginKind.WEB` produces a `web` tag that no deny pair matches. Tightening that changes which
 calls block, so it needs a decision rather than a silent change.
 
-## Phase 2 — Value-level provenance (2 weeks) — the centerpiece
+## Phase 2 — Value-level provenance ✅ DONE — the centerpiece
 
-> **Design note written and awaiting review:**
-> [`docs/design-notes/VALUE_LEVEL_PROVENANCE.md`](../docs/design-notes/VALUE_LEVEL_PROVENANCE.md)
->
-> `AGENTS.md` requires the taint engine to be designed with the human and built in small
-> reviewable pieces, so the note comes first. It compares four options, recommends
-> reference-based propagation with a pessimistic fallback, and lists four open questions.
-> **Read and argue with it before implementation starts.**
+Shipped 2026-08-20 exactly as the
+[design note](../docs/design-notes/VALUE_LEVEL_PROVENANCE.md) specified — reference-based
+propagation with a pessimistic fallback, built in the six reviewable steps, each landing
+green. The note now records the decision taken on each of its four open questions, and
+chapter [11](11-value-level-provenance.md) teaches the mechanism.
 
-The hard part, the novel part, and the thing to talk about in interviews.
+The "done when" criterion was met and exceeded: every attack still blocks under its exact
+rule, the recoverable false blocks pass, and the measured comparison *is* the result —
 
-Replace session-global `influence` with real per-value tracking:
+```
+session/strict            100.0% containment     54.5% false-block
+value/strict              100.0% containment      9.1% false-block
+```
 
-- Give each tool result a provenance ID and label it individually
-- Thread provenance through LangGraph state so a call's arguments carry the IDs of the values
-  that produced them
-- Populate `arg_provenance` for real, making
-  [`label_for_call`](../src/capgate/engine/pipeline.py#L36) meaningful
-- Judge each call on the data actually feeding **it**, not on everything that came before
-
-Keep session influence available as a strict fallback mode, so you can measure the difference —
-that comparison *is* a result worth reporting.
-
-**Done when:** an attack scenario still blocks, while a benign scenario that used to false-block
-now passes. Both frozen as tests.
+— with the residual false block structural by construction and frozen by test.
 
 ## Phase 3 — Attack + utility corpus ✅ DONE — the headline number
 
@@ -249,7 +240,7 @@ Only if Phases 0–5 are genuinely finished.
 | Week | Work | State |
 |---|---|---|
 | 1 | Phase 0 + Phase 1 | ✅ done |
-| 2–3 | Phase 2 — value-level provenance | design note awaiting review |
+| 2–3 | Phase 2 — value-level provenance | ✅ done — see chapter [11](11-value-level-provenance.md) |
 | 4 | Phase 3 — attack corpus | ✅ done early |
 | 5 | Phase 4 — approval via `interrupt()` | ✅ done early |
 | 6 | Phase 5 — parallel turns, then docs and a demo recording | next |

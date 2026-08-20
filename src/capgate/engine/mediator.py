@@ -11,6 +11,7 @@ from capgate.engine.decision import Decision
 from capgate.engine.pipeline import DecisionPipeline
 from capgate.proxy.events import JsonObject, JsonValue, ToolCallEvent, ToolResultEvent
 from capgate.receipts.signer import ReceiptWriter
+from capgate.taint.declassify import DeclassificationError
 from capgate.taint.labels import Label
 from capgate.taint.propagation import join_labels
 from capgate.taint.values import resolve_argument
@@ -230,8 +231,21 @@ class ToolCallMediator:
 
         result_event = _result_event(event, json_result)
         try:
-            reference = self._pipeline.observe_result(
+            observed = self._pipeline.observe_result(
                 self._context, event, result_event, payload=payload
+            )
+        except DeclassificationError:
+            # A policy verdict, not an internal failure: the extraction does not conform
+            # to its declared domains, so the planner must never see it. The session
+            # stays healthy — nothing was recorded and nothing leaked.
+            return self._rejected(
+                event,
+                _decision(
+                    "tool result failed declassification validation and was withheld",
+                    "flow.declassification_failed",
+                    decision.labels,
+                ),
+                execution_started=True,
             )
         except Exception:
             self._failed_closed = True
@@ -243,6 +257,13 @@ class ToolCallMediator:
                     decision.labels,
                 ),
                 execution_started=True,
+            )
+        if observed.declassified_bits is not None:
+            # The audited channel width goes into the signed receipt's taint labels.
+            decision = replace(
+                decision,
+                labels=decision.labels
+                | {f"declassified:{observed.declassified_bits:.2f}bits"},
             )
 
         try:
@@ -263,7 +284,7 @@ class ToolCallMediator:
                 value=None,
             )
         return MediationOutcome(
-            decision=decision, executed=True, value=result, reference=reference
+            decision=decision, executed=True, value=result, reference=observed.reference
         )
 
     def _resolve_approval(

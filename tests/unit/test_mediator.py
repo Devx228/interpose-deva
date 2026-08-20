@@ -7,7 +7,7 @@ from threading import Event
 
 from capgate.engine.context import AgentContext
 from capgate.engine.mediator import ToolCallMediator
-from capgate.engine.pipeline import DecisionPipeline, ToolMetadata
+from capgate.engine.pipeline import DecisionPipeline, ObservedResult, ToolMetadata
 from capgate.flow.sinks import SinkKind
 from capgate.policy import parse_policy
 from capgate.proxy.events import JsonValue, ToolCallEvent, ToolResultEvent
@@ -327,7 +327,7 @@ class FailingObservationPipeline(DecisionPipeline):
         result_event: ToolResultEvent,
         *,
         payload: JsonValue | None = None,
-    ) -> str | None:
+    ) -> ObservedResult:
         raise RuntimeError("PRIVATE_PROVENANCE_DETAIL")
 
 

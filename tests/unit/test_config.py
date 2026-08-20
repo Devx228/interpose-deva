@@ -82,6 +82,72 @@ tools:
     assert load_tool_metadata(path)["read_secret"].returns_reference is True
 
 
+def test_declassify_block_builds_a_spec_with_the_tool_label_as_output(
+    tmp_path: Path,
+) -> None:
+    path = _write(
+        tmp_path,
+        """
+tools:
+  extract_meeting:
+    capability: read:email
+    confidentiality: public
+    integrity: trusted
+    risk_class: trusted_direct
+    declassify:
+      fields:
+        meeting_moved: {type: bool}
+        new_hour: {type: int, min: 0, max: 23}
+        category: {type: enum, values: [scheduling, billing, other]}
+""",
+    )
+
+    metadata = load_tool_metadata(path)["extract_meeting"]
+
+    assert metadata.declassification is not None
+    assert metadata.declassification.output_label == metadata.result_label
+    assert metadata.declassification.validate(
+        {"meeting_moved": True, "new_hour": 15, "category": "scheduling"}
+    ) == pytest.approx(metadata.declassification.released_bits())
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        pytest.param("declassify: {}", id="missing-fields"),
+        pytest.param("declassify:\n      fields: {}", id="empty-fields"),
+        pytest.param(
+            "declassify:\n      fields:\n        note: {type: string}",
+            id="free-string-domain-rejected",
+        ),
+        pytest.param(
+            "declassify:\n      fields:\n        hour: {type: int, min: 9, max: 5}",
+            id="inverted-int-range",
+        ),
+        pytest.param(
+            "declassify:\n      fields:\n        category: {type: enum, values: []}",
+            id="empty-enum",
+        ),
+    ],
+)
+def test_invalid_declassify_blocks_are_config_errors(tmp_path: Path, block: str) -> None:
+    path = _write(
+        tmp_path,
+        f"""
+tools:
+  extract_meeting:
+    capability: read:email
+    confidentiality: public
+    integrity: trusted
+    risk_class: trusted_direct
+    {block}
+""",
+    )
+
+    with pytest.raises(ConfigError, match="declassify"):
+        load_tool_metadata(path)
+
+
 def test_returns_reference_must_be_a_boolean(tmp_path: Path) -> None:
     path = _write(
         tmp_path,

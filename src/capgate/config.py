@@ -12,6 +12,13 @@ from capgate.flow.sinks import SinkKind
 from capgate.flow.sources import DataSourceKind, is_valid_source_tag
 from capgate.policy.model import Capability
 from capgate.sandbox.base import RiskClass
+from capgate.taint.declassify import (
+    BoolField,
+    DeclassificationSpec,
+    EnumField,
+    FieldDomain,
+    IntRangeField,
+)
 from capgate.taint.labels import Confidentiality, Integrity, Label
 
 _REQUIRED_ROOT_KEYS = frozenset({"tools"})
@@ -21,7 +28,8 @@ _DENY_KEYS = frozenset({"from", "to"})
 _REQUIRED_TOOL_KEYS = frozenset(
     {"capability", "confidentiality", "integrity", "risk_class"}
 )
-_OPTIONAL_TOOL_KEYS = frozenset({"source_tags", "sink", "returns_reference"})
+_OPTIONAL_TOOL_KEYS = frozenset({"source_tags", "sink", "returns_reference", "declassify"})
+_DECLASSIFY_KEYS = frozenset({"fields"})
 _TOOL_KEYS = _REQUIRED_TOOL_KEYS | _OPTIONAL_TOOL_KEYS
 
 
@@ -167,14 +175,80 @@ def _parse_tool_metadata(raw: object) -> ToolMetadata:
     except ValueError:
         raise ConfigError("tool metadata label, risk class, or sink is invalid") from None
 
+    result_label = Label(
+        confidentiality=confidentiality,
+        integrity=integrity,
+        source_tags=frozenset(source_tags),
+    )
+    declassification: DeclassificationSpec | None = None
+    if "declassify" in data:
+        # A declassifier's declared confidentiality/integrity ARE the post-validation
+        # output label; the closed field domains come from the declassify block.
+        declassification = _parse_declassification(data["declassify"], result_label)
+
     return ToolMetadata(
-        result_label=Label(
-            confidentiality=confidentiality,
-            integrity=integrity,
-            source_tags=frozenset(source_tags),
-        ),
+        result_label=result_label,
         risk_class=risk_class,
         sink=sink,
         capability=capability,
         returns_reference=returns_reference_raw,
+        declassification=declassification,
     )
+
+
+def _parse_declassification(raw: object, output_label: Label) -> DeclassificationSpec:
+    if not isinstance(raw, dict) or set(cast(dict[str, object], raw)) != _DECLASSIFY_KEYS:
+        raise ConfigError("declassify must be a mapping with exactly the fields key")
+    fields_raw = cast(dict[str, object], raw)["fields"]
+    if not isinstance(fields_raw, dict) or not fields_raw:
+        raise ConfigError("declassify fields must be a non-empty mapping")
+    fields: dict[str, FieldDomain] = {}
+    for name, domain_raw in cast(dict[object, object], fields_raw).items():
+        if not isinstance(name, str):
+            raise ConfigError("declassify field names must be strings")
+        fields[name] = _parse_field_domain(name, domain_raw)
+    try:
+        return DeclassificationSpec(fields=fields, output_label=output_label)
+    except ValueError as error:
+        raise ConfigError(f"declassify spec is invalid: {error}") from None
+
+
+def _parse_field_domain(name: str, raw: object) -> FieldDomain:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"declassify field must be a mapping: {name}")
+    data = cast(dict[str, object], raw)
+    kind = data.get("type")
+    try:
+        if kind == "bool":
+            if set(data) != {"type"}:
+                raise ConfigError(f"declassify bool field takes no extra keys: {name}")
+            return BoolField()
+        if kind == "int":
+            if set(data) != {"type", "min", "max"}:
+                raise ConfigError(f"declassify int field needs exactly min and max: {name}")
+            minimum = data["min"]
+            maximum = data["max"]
+            if (
+                not isinstance(minimum, int)
+                or not isinstance(maximum, int)
+                or isinstance(minimum, bool)
+                or isinstance(maximum, bool)
+            ):
+                raise ConfigError(f"declassify int bounds must be integers: {name}")
+            return IntRangeField(minimum, maximum)
+        if kind == "enum":
+            if set(data) != {"type", "values"}:
+                raise ConfigError(f"declassify enum field needs exactly values: {name}")
+            values = data["values"]
+            if (
+                not isinstance(values, list)
+                or not values
+                or any(not isinstance(item, str) for item in values)
+            ):
+                raise ConfigError(
+                    f"declassify enum values must be a non-empty string list: {name}"
+                )
+            return EnumField(frozenset(cast(list[str], values)))
+    except ValueError as error:
+        raise ConfigError(f"declassify field domain is invalid: {name}: {error}") from None
+    raise ConfigError(f"declassify field type must be bool, int, or enum: {name}")

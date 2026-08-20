@@ -38,16 +38,16 @@ It is not a production release or evidence that every original stage is complete
 Produced by `python bench/run_scenarios.py --matrix`, reports at
 [`bench/reports/scenario-corpus-latest.json`](bench/reports/scenario-corpus-latest.json) and
 [`bench/reports/scenario-matrix-latest.json`](bench/reports/scenario-matrix-latest.json).
-16 attacks, 11 benign flows; deterministic, no API key, no network. All 16 attacks breach
+17 attacks, 12 benign flows; deterministic, no API key, no network. All 17 attacks breach
 undefended, so none is vacuous, and each must block under the *specific* rule it was written
 to exercise.
 
 | Provenance | Rules | Containment | False-block rate |
 |---|---|---|---|
-| session-global | default | 75% (12/16) | 18.2% (2/11) |
-| session-global | `--strict-integrity` | 100% (16/16) | 54.5% (6/11) |
-| value-level | default | 75% (12/16) | 9.1% (1/11) |
-| value-level | `--strict-integrity` | **100%** (16/16) | **9.1%** (1/11) |
+| session-global | default | 76.5% (13/17) | 25.0% (3/12) |
+| session-global | `--strict-integrity` | 100% (17/17) | 58.3% (7/12) |
+| value-level | default | 76.5% (13/17) | 8.3% (1/12) |
+| value-level | `--strict-integrity` | **100%** (17/17) | **8.3%** (1/12) |
 
 Value-level provenance ([design note](docs/design-notes/VALUE_LEVEL_PROVENANCE.md), now
 implemented) stores pass-through tool results behind unforgeable opaque references, so exact
@@ -56,8 +56,17 @@ influence. That dissolves the coverage/utility tradeoff the 2026-08-17 status re
 strict integrity rule previously cost half the benign corpus and now costs one flow —
 `email-summary-needs-comprehension`, which is refused in every mode *by construction* because
 the planner must read the untrusted email raw. A test asserts that residual is never quietly
-recovered. The four destructive attacks remain uncontained under default rules in both
-provenance modes and are reported as the known gap.
+recovered.
+
+Audited, bandwidth-bounded declassification
+([design note](docs/design-notes/DECLASSIFICATION.md), also implemented 2026-08-20) prices the
+recovery of that workflow when it is done soundly instead: a quarantined extractor turns the
+referenced email into two schema-bounded fields (~5.6 bits, recorded in the signed receipt)
+and the reply passes under default and strict rules alike
+(`email-triage-quarantined-extraction`). A compromised extractor smuggling a payload through
+its output is a corpus attack (`quarantine-escape-through-extractor`), withheld under
+`flow.declassification_failed` in all four cells. The four destructive attacks remain
+uncontained under default rules in both provenance modes and are reported as the known gap.
 
 **This is not an ASR and is not comparable to published AgentDojo results.** It measures
 whether enforcement holds against a scripted planner that obeys every injected instruction
@@ -193,8 +202,10 @@ is not invoked; and three signed receipts replay without retaining the raw marke
    from the README.
 3. Agree a benchmark provider/model/cost/time matrix, then run identical clean-revision undefended
    and CapGate AgentDojo cases whose control attack actually succeeds.
-4. A CaMeL-style quarantined reader, to soundly recover comprehension-plus-external-send flows —
-   the one benign class value-level provenance cannot.
+4. ~~Soundly recover comprehension-bound flows.~~ **Done 2026-08-20** for the pass-through
+   extraction shape: audited, bandwidth-bounded declassification through quarantined
+   extractor tools, with the escape attempt contained and the released bits receipted. A
+   *live* dual-LLM extractor (real model in the quarantine seat) remains demo-only.
 5. Move sandbox validation to a supported Linux host; implement the trusted runner and egress broker
    before claiming isolation.
 6. Add pin re-approval and shared multi-server provenance, then generalize the tested LangGraph slice

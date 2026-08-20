@@ -1,12 +1,16 @@
 # Current status — 20 August 2026
 
 > **Update 2026-08-20:** value-level provenance (NEXT_STEPS item 1) is **implemented and
-> measured**. The corpus now runs a 2×2 matrix (`--matrix`): with strict integrity on,
-> containment holds at 100% while the false-block rate drops from 54.5% to 9.1%; the single
-> residual is `email-summary-needs-comprehension`, false-blocked in every mode by
-> construction. Current baseline: 461 passed / 4 skipped, ruff and strict mypy clean, CI
-> green on both OSes since `f7266a6`. Numbers below from 2026-08-17 remain as history;
-> STATUS.md and README.md carry the current ones.
+> measured**, and so is **audited, bandwidth-bounded declassification** with quarantined
+> extraction. The corpus (17 attacks, 12 benign) runs a 2×2 matrix (`--matrix`): with
+> strict integrity on, containment holds at 100% while the false-block rate is 8.3% under
+> value-level provenance versus 58.3% under session taint. The single residual is
+> `email-summary-needs-comprehension` (raw comprehension), false-blocked in every mode by
+> construction; its quarantined counterpart passes for a receipted ~5.6-bit price, and the
+> extractor escape attempt is a contained attack in all four cells. Current baseline: 483
+> passed / 4 skipped, ruff and strict mypy clean, CI green on both OSes since `f7266a6`.
+> Numbers below from 2026-08-17 remain as history; STATUS.md and README.md carry the
+> current ones.
 
 Every number here is reproducible from the repo. If you cannot reproduce one, treat it as
 wrong and fix this file rather than quoting it.

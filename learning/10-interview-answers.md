@@ -178,8 +178,12 @@ why an injected planner passing a referenced secret outward is still blocked.
 *What can't it do?* The planner can't read a referenced value, so any task that needs
 comprehension of untrusted content still inherits session taint. I keep one benign scenario
 false-blocked in every mode to make that cost visible, with a test asserting it's never
-quietly recovered. Fixing that class soundly needs a quarantined reader — a second model that
-can read but has no tools — which I've scoped but not built.
+quietly recovered. For the cases where the *task* can be done without free-text comprehension,
+I built the sound path: a quarantined extractor with audited, bandwidth-bounded
+declassification — the extraction's fields have closed domains, a nonconforming output is
+withheld outright, and every conforming call's attacker-choosable bits are signed into the
+receipt. The corpus has both the recovered workflow and the escape attempt, contained in
+every mode.
 
 ## "What would you do with three more months?"
 

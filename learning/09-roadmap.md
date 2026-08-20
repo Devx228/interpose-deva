@@ -225,15 +225,19 @@ are made against the pre-turn state before any executes. Pick one, document why.
 **Done when:** a parallel turn is mediated deterministically, with a test proving the verdict
 does not depend on completion order.
 
-## Phase 6 — Stretch: declassification
+## Phase 6 — Declassification ✅ DONE (landed ahead of Phase 5)
 
 The "recover utility" contribution. AgentArmor (arXiv:2508.01249) identifies reducing utility
 cost as open contribution space.
 
-An explicit, audited operation that lowers a label — human review, or a trusted transform like
-"extract only the row count." Must be explicit, must be receipted, must never be implicit.
-
-Only if Phases 0–5 are genuinely finished.
+Shipped 2026-08-20 as **audited, bandwidth-bounded declassification**: explicit per-tool
+specs with closed field domains, hard-fail validation (a nonconforming extraction is withheld
+from the planner, never conservatively relabeled), and the released bits signed into every
+receipt. It jumped the phase order because value-level provenance made it both sound to build
+and cheap to measure — the quarantined-extraction scenario and its escape-attempt attack were
+one corpus extension away. Chapter [12](12-declassification.md) teaches it;
+[`docs/design-notes/DECLASSIFICATION.md`](../docs/design-notes/DECLASSIFICATION.md) is the
+design record.
 
 ## Timeline
 
@@ -243,7 +247,8 @@ Only if Phases 0–5 are genuinely finished.
 | 2–3 | Phase 2 — value-level provenance | ✅ done — see chapter [11](11-value-level-provenance.md) |
 | 4 | Phase 3 — attack corpus | ✅ done early |
 | 5 | Phase 4 — approval via `interrupt()` | ✅ done early |
-| 6 | Phase 5 — parallel turns, then docs and a demo recording | next |
+| 6 | Phase 6 — declassification | ✅ done early — see chapter [12](12-declassification.md) |
+| — | Phase 5 — parallel turns, then docs and a demo recording | next |
 
 Phase 3 landed ahead of Phase 2 because it does not depend on it — and having the corpus
 *first* is better, since it gives Phase 2 a before/after number to move.

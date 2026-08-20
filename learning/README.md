@@ -23,6 +23,7 @@ The order matters. Each part depends on the one before it.
 | 09 | [Roadmap](09-roadmap.md) | What we're building over the next six weeks, and why |
 | 10 | [Interview answers](10-interview-answers.md) | Questions you will be asked, and how to answer them |
 | 11 | [Value-level provenance](11-value-level-provenance.md) | How the one real weakness was fixed, measured, and what the fix refuses to do |
+| 12 | [Declassification](12-declassification.md) | The priced exception: quarantined extraction, closed domains, and bits in the receipt |
 
 ## The one-paragraph version
 
@@ -54,16 +55,16 @@ See [07 — Code walkthrough](07-code-walkthrough.md) for what each line of that
 python bench/run_scenarios.py --matrix
 ```
 
-27 deterministic scenarios — 16 attacks drawn from real incidents, 11 pieces of legitimate
+29 deterministic scenarios — 17 attacks drawn from real incidents, 12 pieces of legitimate
 work. Each attack runs undefended first as a control, then through CapGate, in all four
 provenance × integrity combinations:
 
 ```
 cell                 containment   false-block
-session/default            75.0%         18.2%
-session/strict            100.0%         54.5%
-value/default              75.0%          9.1%
-value/strict              100.0%          9.1%
+session/default            76.5%         25.0%
+session/strict            100.0%         58.3%
+value/default              76.5%          8.3%
+value/strict              100.0%          8.3%
 ```
 
 Read each row's two numbers together — containment alone is meaningless, since refusing every

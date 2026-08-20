@@ -11,23 +11,24 @@ provenance × enforcement combinations:
 
 | Provenance | Rules | Containment | False-block rate |
 |---|---|---|---|
-| session-global | default | 75% (12/16) | 18.2% (2/11) |
-| session-global | `--strict-integrity` | 100% (16/16) | 54.5% (6/11) |
-| value-level | default | 75% (12/16) | 9.1% (1/11) |
-| value-level | `--strict-integrity` | **100%** (16/16) | **9.1%** (1/11) |
+| session-global | default | 76.5% (13/17) | 25.0% (3/12) |
+| session-global | `--strict-integrity` | 100% (17/17) | 58.3% (7/12) |
+| value-level | default | 76.5% (13/17) | 8.3% (1/12) |
+| value-level | `--strict-integrity` | **100%** (17/17) | **8.3%** (1/12) |
 
 Neither column is the answer on its own. Perfect containment is trivially achievable by
-refusing everything, and a 54.5% false-block rate is unusable in practice.
+refusing everything, and a 58.3% false-block rate is unusable in practice.
 
 Under session-global taint the two goals pull against each other; value-level provenance
 ([design note](design-notes/VALUE_LEVEL_PROVENANCE.md), now implemented) is the cell where
 both hold at once. What the bottom row does **not** mean: the remaining false block is
-structural, not fixable by more precision — a planner that must read untrusted content to do
-its job has a genuinely influenced context, and the corpus keeps one such flow
-(`email-summary-needs-comprehension`) refused in every mode so this cost stays visible.
-Recovering it soundly needs a CaMeL-style quarantined reader or explicit declassification,
-neither of which exists here. Precision is also **opt-in per tool**: a flow nobody marked
-pass-through behaves exactly as session-global.
+structural, not fixable by more precision — a planner that reads untrusted content *raw* has a
+genuinely influenced context, and the corpus keeps one such flow
+(`email-summary-needs-comprehension`) refused in every mode so this cost stays visible. Its
+quarantined counterpart (`email-triage-quarantined-extraction`) recovers the same workflow
+through [audited, bandwidth-bounded declassification](design-notes/DECLASSIFICATION.md) — at
+an explicit, receipted price of ~5.6 attacker-choosable bits. Precision is also **opt-in per
+tool**: a flow nobody marked pass-through behaves exactly as session-global.
 
 ## 2. Attacks that get through by default
 
@@ -74,7 +75,7 @@ raw, inherit session taint) or the task. No quarantined-reader split exists.
 [`events.py`](../src/capgate/proxy/events.py) hardcodes `arg_provenance={}`, so per-value
 tracking there is not merely coarse — it does not exist. The proxy always runs session-global.
 
-**The self-authored corpus is authored, not sampled.** 16 attacks written by the same person
+**The self-authored corpus is authored, not sampled.** 17 attacks written by the same person
 who wrote the defense. That demonstrates the encoded flows are contained; it says nothing about
 flows nobody thought of.
 
@@ -128,8 +129,14 @@ matches no deny pair. Those tools rely on the trifecta rule alone.
 **Single-call turns only.** The LangGraph adapter rejects parallel tool calls, because
 `ToolNode` dispatches concurrently and thread scheduling is not a deterministic security order.
 
-**No declassification.** Labels only ever become more restrictive. Long sessions therefore
-accumulate restriction with no legitimate way to release it, which is a utility ceiling.
+**Declassification is narrow by design.** The only way a label moves down is a declared
+extractor whose output fits closed domains (bool, bounded int, string enum) — never free
+strings. Anything an author cannot honestly enumerate stays restricted, so long sessions of
+free-text work still accumulate restriction; the utility ceiling is raised, not removed. The
+stated residual: a conforming extraction still hands an attacker up to
+`sum(log2(|domain|))` bits of steering per call. That number is in every receipt, but a
+deployment that conditions dangerous decisions on extracted fields is spending those bits
+whether it reads the receipts or not.
 
 ## 4. Assumptions that break it
 
@@ -188,12 +195,15 @@ Mapped to OWASP. "Partial" means a meaningful class is covered and a meaningful 
 In rough order of how much each would move the numbers:
 
 1. **An independent red team** — the corpus is authored by the defender, which caps what it
-   can demonstrate. Now that value-level provenance exists, the most valuable attack surface
-   to probe is the reference mechanism itself.
-2. **A quarantined reader (CaMeL-style dual model)** — the only sound way to recover
-   comprehension-plus-external-send flows, the one class value-level provenance cannot.
-3. **Explicit declassification** — releases accumulated restriction and lifts the utility
-   ceiling.
+   can demonstrate. The most valuable surfaces to probe are now the reference mechanism and
+   the declassification validator.
+2. **A live quarantined extractor** — the corpus proves the mechanism with a scripted
+   extractor; putting a real tool-less LLM in the quarantine seat (as
+   `examples/quarantine_demo.py` sketches) and measuring it is the missing step between
+   "sound design" and "works with a model in the loop".
+3. **Richer declassification domains with honest accounting** — bounded-length structured
+   text is the obvious demand and the obvious hazard; any extension must keep the bits
+   number true.
 4. **External receipt anchoring** — closes tail deletion.
 5. **A privileged Linux environment** — the only way any isolation claim becomes real.
 

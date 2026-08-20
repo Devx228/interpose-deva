@@ -209,7 +209,9 @@ first one that can alter a verdict, and it must land with attack **and** benign 
   session influence. That is correct behavior, not a gap — but it means references improve
   utility, not attack coverage.
 - Confidentiality still comes from trusted metadata. Nothing here infers sensitivity.
-- No declassification. Labels still only move one direction.
+- No declassification *within this mechanism*. References never lower a label; they only
+  report it exactly. The separate, explicitly audited exception landed later the same day —
+  see [`DECLASSIFICATION.md`](DECLASSIFICATION.md).
 
 ---
 

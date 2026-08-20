@@ -219,13 +219,16 @@ imprecise there — it is entirely absent.
 **Is it good?** No. It blocks legitimate work, and a security tool that blocks everything gets
 switched off. It also means any utility number you measure today is dominated by false blocks.
 
-**Fixing this is the centerpiece of what we are building.** See [09 — Roadmap](09-roadmap.md).
+**Fixing this became the centerpiece of the project.** Chapter
+[11](11-value-level-provenance.md) is the fix and its measurement.
 
 ## What is deliberately not here
 
-**No declassification.** There is no operation that lowers a label. A real system eventually
-needs one — "this human reviewed it and approved release" — but it must be explicit and
-separately audited, never implicit. Adding it is a stretch goal.
+**No implicit declassification.** No join, propagation, or tracking operation in this
+chapter ever lowers a label. The one lowering that exists lives elsewhere and on purpose:
+an explicit, per-tool, schema-bounded exception whose released bits are signed into the
+receipt — chapter [12](12-declassification.md). If a label ever drops outside that path,
+it is a bug.
 
 **No field-level tracking.** Labels apply to whole values, not individual fields of a dict.
 The design note ([`spec-docs/STAGE1_TAINT_DESIGN.md`](../spec-docs/STAGE1_TAINT_DESIGN.md))

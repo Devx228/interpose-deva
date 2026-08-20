@@ -11,10 +11,10 @@ Two corpus rules, two numbers each (`python bench/run_scenarios.py --matrix`):
 
 | Provenance | Rules | Containment | False-block |
 |---|---|---|---|
-| session-global | default | 75% | 18.2% |
-| session-global | `--strict-integrity` | 100% | 54.5% |
-| value-level | default | 75% | 9.1% |
-| value-level | `--strict-integrity` | **100%** | **9.1%** |
+| session-global | default | 76.5% | 25.0% |
+| session-global | `--strict-integrity` | 100% | 58.3% |
+| value-level | default | 76.5% | 8.3% |
+| value-level | `--strict-integrity` | **100%** | **8.3%** |
 
 Under session-global taint you must choose: miss the destructive-action class (default), or
 refuse half the legitimate corpus (strict). The two headline critiques — "cover more" and
@@ -87,12 +87,15 @@ through, and the secret marker appears in no planner-visible message either way.
 ## What it refuses to fix
 
 One benign scenario, `email-summary-needs-comprehension`, is false-blocked in **every** mode,
-on purpose. The planner must read the untrusted email raw to summarise it, so its context is
-genuinely influenced, and the external reply is refused. No amount of provenance precision can
-recover it, because the influence is real — recovering it soundly needs a quarantined reader
-(a second model that can read but has no tools) or explicit declassification. Neither exists
-here, and a test asserts the scenario is never quietly recovered: if it ever passes, something
-has started unsoundly declassifying planner context.
+on purpose. The planner reads the untrusted email raw, so its context is genuinely
+influenced, and the external reply is refused. No amount of provenance precision can recover
+it, because the influence is real — and a test asserts the scenario is never quietly
+recovered: if it ever passes, something has started unsoundly declassifying planner context.
+
+What *does* exist is the priced alternative: do the same task without the raw read, through a
+quarantined extractor whose schema-bounded output is explicitly, auditedly declassified.
+That is chapter [12](12-declassification.md) — references make it possible, but it is a
+separate mechanism with its own rules and its own receipt trail.
 
 That is the pattern this project keeps returning to: when a limit is structural, measure it,
 freeze it, and say what would actually remove it — never paper over it.
@@ -116,4 +119,5 @@ exactly the old behavior.
 ---
 
 Previous: [10 — Interview answers](10-interview-answers.md) ·
+Next: [12 — Declassification](12-declassification.md) ·
 [Back to the index](README.md)

@@ -37,13 +37,13 @@ python bench/run_scenarios.py --matrix
 
 ```
 cell                 containment   false-block
-session/default            75.0%         18.2%
-session/strict            100.0%         54.5%
-value/default              75.0%          9.1%
-value/strict              100.0%          9.1%
+session/default            76.5%         25.0%
+session/strict            100.0%         58.3%
+value/default              76.5%          8.3%
+value/strict              100.0%          8.3%
 ```
 
-(27 scenarios: 16 attacks, 11 benign.) Corpus in [`bench/scenarios.py`](../bench/scenarios.py),
+(29 scenarios: 17 attacks, 12 benign.) Corpus in [`bench/scenarios.py`](../bench/scenarios.py),
 harness in [`bench/run_scenarios.py`](../bench/run_scenarios.py), invariants enforced by
 [`tests/integration/test_scenarios.py`](../tests/integration/test_scenarios.py) and CI.
 
@@ -102,8 +102,10 @@ security.
 
 Value-level provenance (chapter [11](11-value-level-provenance.md)) fixed this where it can be
 fixed soundly: pass-through values travel behind unforgeable opaque references carrying exact
-lineage, and the false-block cost of the strict integrity rule fell from 54.5% to 9.1% with
-containment held at 100%.
+lineage. On the current corpus the strict integrity rule costs 8.3% false blocks instead of
+58.3%, with containment held at 100% — and the comprehension-bound workflow that references
+alone cannot recover has a priced, audited path through quarantined extraction (chapter
+[12](12-declassification.md)).
 
 The edges that remain, deliberately:
 

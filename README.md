@@ -12,16 +12,16 @@ proxy is another, driven by the identical engine. That is the proof, not the cla
 
 ## Measured, both columns
 
-27 offline scenarios: 16 attacks reproducing real incidents, 11 legitimate workflows. Every
+29 offline scenarios: 17 attacks reproducing real incidents, 12 legitimate workflows. Every
 attack also runs undefended as a control, because an attack that fails without the defense
 proves nothing.
 
 | Provenance | Rules | Containment | False-block rate |
 |---|---|---|---|
-| session-global | default | 75% (12/16) | 18.2% (2/11) |
-| session-global | `--strict-integrity` | 100% (16/16) | 54.5% (6/11) |
-| value-level | default | 75% (12/16) | 9.1% (1/11) |
-| value-level | `--strict-integrity` | **100%** (16/16) | **9.1%** (1/11) |
+| session-global | default | 76.5% (13/17) | 25.0% (3/12) |
+| session-global | `--strict-integrity` | 100% (17/17) | 58.3% (7/12) |
+| value-level | default | 76.5% (13/17) | 8.3% (1/12) |
+| value-level | `--strict-integrity` | **100%** (17/17) | **8.3%** (1/12) |
 
 ```bash
 python bench/run_scenarios.py --matrix            # deterministic, no API key, no network
@@ -30,13 +30,21 @@ python bench/run_scenarios.py --matrix            # deterministic, no API key, n
 **Neither column is the answer alone** — perfect containment is trivially achievable by refusing
 everything. Under session-global taint the two goals pull against each other: the strict rule
 closes the destructive-action gap (four attacks that leak nothing, so confidentiality-based
-rules cannot see them) but refuses half the benign corpus, because one untrusted read marks the
-whole session. The bottom row is the finding: **value-level provenance** — CaMeL-style opaque
-references that carry exact lineage outside the model — holds full containment and 9% false
-blocks *at the same time*. The one remaining false block is there by construction: a flow where
-the planner must actually read untrusted content cannot be recovered by any provenance
-precision, and a test asserts it is never quietly "fixed". Design and decisions:
-[value-level provenance](docs/design-notes/VALUE_LEVEL_PROVENANCE.md).
+rules cannot see them) but refuses over half the benign corpus, because one untrusted read marks
+the whole session. The bottom row is the finding: **value-level provenance** — CaMeL-style
+opaque references that carry exact lineage outside the model — holds full containment and 8%
+false blocks *at the same time*.
+
+Two mechanisms earn that row, each with its own design note:
+[**value-level provenance**](docs/design-notes/VALUE_LEVEL_PROVENANCE.md) (unforgeable
+references, pessimistic fallback) and [**audited, bandwidth-bounded
+declassification**](docs/design-notes/DECLASSIFICATION.md) — a quarantined extractor may turn an
+untrusted document the planner never reads into a few schema-bounded fields, at a price the
+signed receipt records in bits (~5.6 for the corpus's email triage). A compromised extractor
+that tries to smuggle a payload through its output is itself a corpus attack, contained in
+every cell. The one remaining false block is there by construction: the same workflow done by
+reading the untrusted content *raw* cannot be recovered by any precision, and a test asserts it
+is never quietly "fixed".
 
 ### Checked against attacks we did not write
 
@@ -273,9 +281,10 @@ python bench/run_scenarios.py             # one cell: session provenance, defaul
 python bench/run_scenarios.py --matrix    # all four provenance x integrity cells
 ```
 
-The 16 attacks reproduce real incidents — EchoLeak CVE-2025-32711, the GitHub MCP toxic agent
-flow, ForcedLeak, multi-hop laundering, argument smuggling, injected destructive actions — and
-the 11 benign scenarios are legitimate work that must not be refused. No API key, no network,
+The 17 attacks reproduce real incidents — EchoLeak CVE-2025-32711, the GitHub MCP toxic agent
+flow, ForcedLeak, multi-hop laundering, argument smuggling, injected destructive actions, a
+quarantine escape through a compromised extractor — and the 12 benign scenarios are legitimate
+work that must not be refused. No API key, no network,
 identical output every run. The headline numbers are the 2×2 table at the top of this page;
 `bench/reports/scenario-matrix-latest.json` is the retained artifact.
 

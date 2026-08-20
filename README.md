@@ -12,24 +12,31 @@ proxy is another, driven by the identical engine. That is the proof, not the cla
 
 ## Measured, both columns
 
-26 offline scenarios: 16 attacks reproducing real incidents, 10 legitimate workflows. Every
+27 offline scenarios: 16 attacks reproducing real incidents, 11 legitimate workflows. Every
 attack also runs undefended as a control, because an attack that fails without the defense
 proves nothing.
 
-| Mode | Containment | False-block rate |
-|---|---|---|
-| Default | **75%** (12/16) | **10%** (1/10) |
-| `--strict-integrity` | **100%** (16/16) | **50%** (5/10) |
+| Provenance | Rules | Containment | False-block rate |
+|---|---|---|---|
+| session-global | default | 75% (12/16) | 18.2% (2/11) |
+| session-global | `--strict-integrity` | 100% (16/16) | 54.5% (6/11) |
+| value-level | default | 75% (12/16) | 9.1% (1/11) |
+| value-level | `--strict-integrity` | **100%** (16/16) | **9.1%** (1/11) |
 
 ```bash
-python bench/run_scenarios.py                     # deterministic, no API key, no network
+python bench/run_scenarios.py --matrix            # deterministic, no API key, no network
 ```
 
-**Neither column is the answer alone.** Perfect containment is trivially achievable by refusing
-everything; a 50% false-block rate is unusable. The gap between those rows *is* the honest state
-of the project: four destructive attacks slip through by default because the lethal-trifecta
-rule is confidentiality-based and those attacks leak nothing — the action itself is the harm.
-Closing that gap costs five times the false blocks, because taint is currently session-wide.
+**Neither column is the answer alone** — perfect containment is trivially achievable by refusing
+everything. Under session-global taint the two goals pull against each other: the strict rule
+closes the destructive-action gap (four attacks that leak nothing, so confidentiality-based
+rules cannot see them) but refuses half the benign corpus, because one untrusted read marks the
+whole session. The bottom row is the finding: **value-level provenance** — CaMeL-style opaque
+references that carry exact lineage outside the model — holds full containment and 9% false
+blocks *at the same time*. The one remaining false block is there by construction: a flow where
+the planner must actually read untrusted content cannot be recovered by any provenance
+precision, and a test asserts it is never quietly "fixed". Design and decisions:
+[value-level provenance](docs/design-notes/VALUE_LEVEL_PROVENANCE.md).
 
 ### Checked against attacks we did not write
 
@@ -259,37 +266,36 @@ Observed with `qwen2.5:7b` on 2026-08-16:
 A trusted resolver would still have to capability-check the plan before resolving any reference
 back to its value, and that resolver does not exist yet.
 
-## Measured containment
+## How the corpus measures
 
 ```bash
-python bench/run_scenarios.py
+python bench/run_scenarios.py             # one cell: session provenance, default rules
+python bench/run_scenarios.py --matrix    # all four provenance x integrity cells
 ```
 
-22 deterministic scenarios — 12 attacks drawn from real incidents (EchoLeak CVE-2025-32711, the
-GitHub MCP toxic agent flow, ForcedLeak, rug pulls, multi-hop laundering, argument smuggling)
-and 10 pieces of legitimate work. No API key, no network, identical output every run.
-
-| Metric | Value |
-|---|---|
-| Undefended attack success rate — the control | **100%** (12/12) |
-| Containment rate through CapGate | **100%** (12/12) |
-| False-block rate on benign work | **10%** (1/10) |
+The 16 attacks reproduce real incidents — EchoLeak CVE-2025-32711, the GitHub MCP toxic agent
+flow, ForcedLeak, multi-hop laundering, argument smuggling, injected destructive actions — and
+the 11 benign scenarios are legitimate work that must not be refused. No API key, no network,
+identical output every run. The headline numbers are the 2×2 table at the top of this page;
+`bench/reports/scenario-matrix-latest.json` is the retained artifact.
 
 Every attack runs undefended first, because an attack that does not succeed without the defense
 proves nothing. Every attack must also block under the *specific* rule it was written to
 exercise, so a coincidental block is not counted. "Breach" means the sink handler actually ran
 with the secret in its arguments — not that an error was returned.
 
+In a value-level run, tool results a scenario declares as pass-through come back to the planner
+as opaque `capgate-ref:` tokens. The same scripted planner passes along whatever it received —
+raw content in session runs, tokens in value runs — so both representations are exercised by
+identical scenarios. A reference an attacker plants in a document resolves to nothing;
+forgetting to reference something falls back to session-global taint. Precision is opt-in,
+safety is not.
+
 **This is not an attack success rate and is not comparable to AgentDojo.** The planner is
 scripted to obey every injected instruction perfectly, so this measures whether enforcement
 holds against a worst-case attacker, not whether a given model can be fooled. The corpus is
 authored rather than sampled, so it shows the encoded flows are contained — not all real-world
 flows. Read the two rates together: refusing every call would score perfect containment.
-
-The single false block is a benign email triage refused because session-global taint marks the
-whole session untrusted after reading an injected email. That imprecision is the known
-limitation, and [value-level provenance](docs/design-notes/VALUE_LEVEL_PROVENANCE.md) is the
-proposed fix.
 
 ## What it costs
 

@@ -1,10 +1,15 @@
 # Value-level provenance design note
 
-> **STATUS: PROPOSAL — awaiting project-owner review. Not implemented.**
+> **STATUS: IMPLEMENTED — 2026-08-20, as designed, with the owner's approval to proceed on
+> the recommended answers.** The six steps below all landed; each open question's decision
+> is recorded inline. Measured result: with the strict integrity rule on, value-level
+> provenance holds 100% containment at a 9.1% false-block rate, versus 54.5% under
+> session-global taint — see `bench/reports/scenario-matrix-latest.json` and the corpus
+> tests that freeze the comparison.
 >
 > `AGENTS.md` and `next-instrux/EXECUTION_DIRECTIVE.md` both require the taint engine to be
-> designed with the human and implemented in small reviewable pieces. This note exists to be
-> argued with before any code changes.
+> designed with the human and implemented in small reviewable pieces. This note existed to
+> be argued with before any code changes, and is retained as the design record.
 
 ## The problem
 
@@ -173,19 +178,30 @@ first one that can alter a verdict, and it must land with attack **and** benign 
    with no tools), or restrict references to values the planner genuinely only needs to *pass
    through* — which covers exfiltration cases but not "summarise this and email the summary"?
 
-   *Current lean: pass-through only, for now.* It covers the incident classes we care about,
-   and it does not require a second model. Say so explicitly rather than implying CaMeL parity.
+   **DECIDED: pass-through only.** It covers the incident classes we care about and needs no
+   second model. The cost is kept visible rather than implied away: the corpus carries a
+   benign scenario (`email-summary-needs-comprehension`) that is false-blocked in every mode
+   because the planner must read the untrusted content raw, and a test asserts it is never
+   quietly recovered. No CaMeL parity is claimed.
 
 2. **Nested references.** Resolve inside lists and dicts, or top-level arguments only?
-   *Lean: nested, depth-bounded — a payload wrapped in a one-key dict should not lose lineage.*
+   **DECIDED: nested, depth- and node-bounded** (`resolve_argument`, depth 8, 256 nodes).
+   Past the budget, substitution simply stops: an untouched token is an opaque string that
+   names nothing downstream, so the bound can only cost utility.
 
 3. **Partial derivation.** If an argument is `"Here is the data: " + ref`, half is proven and
-   half is model-composed. *Lean: join both — the reference's label and the session fallback.
-   Never take the more permissive of the two.*
+   half is model-composed. **DECIDED: join both.** `ArgumentResolution.joined_label` takes a
+   fallback and joins the resolved labels into it; the adapter likewise joins resolved labels
+   into the author-declared label. Lineage only ever adds restriction. Embedded substitution
+   additionally requires the stored value to itself be a string — a structured value is never
+   flattened into composed text.
 
-4. **Does a reference in an argument mean the planner read the value?** It does not, and that
-   distinction may matter for the integrity component specifically. Worth thinking about before
-   step 5.
+4. **Does a reference in an argument mean the planner read the value?** It does not, and the
+   implementation leans on exactly that: a reference-returning result skips the session
+   influence join *because* the planner only ever held the token. Session influence remains
+   the control-taint channel — a planner that read untrusted content raw keeps its whole
+   session marked, which is why every attack whose injection was actually read stays
+   contained.
 
 ## What this does not fix
 
@@ -197,9 +213,16 @@ first one that can alter a verdict, and it must land with attack **and** benign 
 
 ---
 
-Review checklist before implementation starts:
+Review checklist, closed at implementation:
 
-- [ ] Is the pessimistic fallback agreed as non-negotiable?
-- [ ] Is pass-through-only reference scope acceptable for v1?
-- [ ] Is the six-step order right, and does each step land green?
-- [ ] Which open question above changes the answer if we get it wrong?
+- [x] Is the pessimistic fallback agreed as non-negotiable? — Yes; unknown lineage falls
+      back to session influence everywhere, and influence always joins at decide time.
+- [x] Is pass-through-only reference scope acceptable for v1? — Yes; the residual cost is
+      measured and frozen rather than hidden (one comprehension-bound benign flow).
+- [x] Is the six-step order right, and does each step land green? — Yes; steps 1–4 changed
+      no observable behavior, step 5 landed together with attack and benign coverage, and
+      step 6 is the `ProvenanceMode` flag the corpus measures both sides of.
+- [x] Which open question above changes the answer if we get it wrong? — Question 4. If a
+      reference-returning result had *kept* joining influence, no benign flow would have
+      been recovered; if session influence had stopped joining into call labels, injected
+      sessions could move referenced secrets outward. Both halves are pinned by tests.

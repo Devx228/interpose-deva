@@ -4,7 +4,13 @@ Roughly 5–6 days remain before the resume submission (~22–23 Aug 2026). Orde
 day, with the honest note that item 1 is the only one that moves a *number* rather than adding
 evidence around the existing ones.
 
-## 1. Value-level provenance — the centrepiece
+## 1. Value-level provenance — the centrepiece — ✅ DONE 2026-08-20
+
+**Shipped as designed.** All six steps landed; the design note records each open-question
+decision. Measured (`python bench/run_scenarios.py --matrix`): strict integrity now costs
+9.1% false blocks instead of 54.5%, with containment held at 100% and the known default-mode
+gap unchanged. The residual false block is comprehension-bound by construction and frozen by
+test. Remaining sub-items below are historical context only.
 
 **Why it dominates everything else:** it is the shared prerequisite for both outstanding
 critiques. Lower the false-block rate *and* make `--strict-integrity` affordable by default.

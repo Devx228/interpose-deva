@@ -1,4 +1,12 @@
-# Current status — 17 August 2026
+# Current status — 20 August 2026
+
+> **Update 2026-08-20:** value-level provenance (NEXT_STEPS item 1) is **implemented and
+> measured**. The corpus now runs a 2×2 matrix (`--matrix`): with strict integrity on,
+> containment holds at 100% while the false-block rate drops from 54.5% to 9.1%; the single
+> residual is `email-summary-needs-comprehension`, false-blocked in every mode by
+> construction. Current baseline: 461 passed / 4 skipped, ruff and strict mypy clean, CI
+> green on both OSes since `f7266a6`. Numbers below from 2026-08-17 remain as history;
+> STATUS.md and README.md carry the current ones.
 
 Every number here is reproducible from the repo. If you cannot reproduce one, treat it as
 wrong and fix this file rather than quoting it.

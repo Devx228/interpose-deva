@@ -6,27 +6,34 @@ leaves uncovered. Everything here is measured or demonstrable from the repositor
 
 ## 1. The measured frontier
 
-`python bench/run_scenarios.py` reports both numbers, in both enforcement modes:
+`python bench/run_scenarios.py --matrix` reports both numbers in all four
+provenance × enforcement combinations:
 
-| Mode | Containment | False-block rate |
-|---|---|---|
-| Default | **75%** (12/16) | **10%** (1/10) |
-| `--strict-integrity` | **100%** (16/16) | **50%** (5/10) |
+| Provenance | Rules | Containment | False-block rate |
+|---|---|---|---|
+| session-global | default | 75% (12/16) | 18.2% (2/11) |
+| session-global | `--strict-integrity` | 100% (16/16) | 54.5% (6/11) |
+| value-level | default | 75% (12/16) | 9.1% (1/11) |
+| value-level | `--strict-integrity` | **100%** (16/16) | **9.1%** (1/11) |
 
 Neither column is the answer on its own. Perfect containment is trivially achievable by
-refusing everything, and a 50% false-block rate is unusable in practice.
+refusing everything, and a 54.5% false-block rate is unusable in practice.
 
-**The gap between those rows is the honest state of the project.** Closing the integrity gap
-costs five times the false blocks, because taint is currently session-wide: one untrusted read
-marks the rest of the session untrusted, so a rule keyed on integrity refuses most later
-writes. Value-level provenance
-([design note](design-notes/VALUE_LEVEL_PROVENANCE.md)) is what would let both columns improve
-together, which is why it is the next piece of work rather than a nice-to-have.
+Under session-global taint the two goals pull against each other; value-level provenance
+([design note](design-notes/VALUE_LEVEL_PROVENANCE.md), now implemented) is the cell where
+both hold at once. What the bottom row does **not** mean: the remaining false block is
+structural, not fixable by more precision — a planner that must read untrusted content to do
+its job has a genuinely influenced context, and the corpus keeps one such flow
+(`email-summary-needs-comprehension`) refused in every mode so this cost stays visible.
+Recovering it soundly needs a CaMeL-style quarantined reader or explicit declassification,
+neither of which exists here. Precision is also **opt-in per tool**: a flow nobody marked
+pass-through behaves exactly as session-global.
 
 ## 2. Attacks that get through by default
 
-Four scenarios in the corpus are **uncontained** under default enforcement, and the harness
-reports them as failures rather than omitting them:
+Four scenarios in the corpus are **uncontained** under default enforcement in *both*
+provenance modes — precision does not change what the default rules can see. The harness
+reports them under "uncontained by design" rather than omitting them:
 
 | Scenario | Why it gets through |
 |---|---|
@@ -51,14 +58,21 @@ of the utility cost in the table above.
 
 ## 3. Structural limitations
 
-**Taint is session-wide, not per-value.** [`AgentContext`](../src/capgate/engine/context.py)
-holds one `influence` label per session and joins every result into it. Joins only move one
-direction, so the first secret-and-untrusted result poisons everything after it. Safe, and
-imprecise. It is the direct cause of both the 10% and the 50%.
+**Session-global taint is still the default, and the fallback.**
+[`AgentContext`](../src/capgate/engine/context.py) joins every raw result into one session
+`influence` label. Value-level provenance improves on this only for tools explicitly marked
+reference-returning, only in `value_level` mode, and only on the LangGraph path. Everything
+unmarked — and every free-text argument the planner composes — still inherits the session
+label. That fallback is deliberate (unknown lineage is untrusted lineage), but it means the
+measured value-level numbers describe flows whose authors did the declaration work.
+
+**References are pass-through only.** The planner cannot read a referenced value, so any task
+that requires comprehending untrusted or secret content forfeits either the precision (read it
+raw, inherit session taint) or the task. No quarantined-reader split exists.
 
 **Value-level provenance is absent on the MCP path.**
 [`events.py`](../src/capgate/proxy/events.py) hardcodes `arg_provenance={}`, so per-value
-tracking there is not merely coarse — it does not exist.
+tracking there is not merely coarse — it does not exist. The proxy always runs session-global.
 
 **The self-authored corpus is authored, not sampled.** 16 attacks written by the same person
 who wrote the defense. That demonstrates the encoded flows are contained; it says nothing about
@@ -173,10 +187,11 @@ Mapped to OWASP. "Partial" means a meaningful class is covered and a meaningful 
 
 In rough order of how much each would move the numbers:
 
-1. **Value-level provenance** — the prerequisite for lowering false blocks *and* affording
-   strict integrity. Everything else is downstream of this.
-2. **An independent red team** — the corpus is authored by the defender, which caps what it can
-   demonstrate.
+1. **An independent red team** — the corpus is authored by the defender, which caps what it
+   can demonstrate. Now that value-level provenance exists, the most valuable attack surface
+   to probe is the reference mechanism itself.
+2. **A quarantined reader (CaMeL-style dual model)** — the only sound way to recover
+   comprehension-plus-external-send flows, the one class value-level provenance cannot.
 3. **Explicit declassification** — releases accumulated restriction and lifts the utility
    ceiling.
 4. **External receipt anchoring** — closes tail deletion.

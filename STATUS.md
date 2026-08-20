@@ -33,26 +33,31 @@ It is not a production release or evidence that every original stage is complete
 
 ## Measured numbers
 
-### Offline scenario corpus — measured 2026-08-16
+### Offline scenario corpus — measured 2026-08-20
 
-Produced by `python bench/run_scenarios.py`, report at
-[`bench/reports/scenario-corpus-latest.json`](bench/reports/scenario-corpus-latest.json).
-Deterministic, no API key, no network.
+Produced by `python bench/run_scenarios.py --matrix`, reports at
+[`bench/reports/scenario-corpus-latest.json`](bench/reports/scenario-corpus-latest.json) and
+[`bench/reports/scenario-matrix-latest.json`](bench/reports/scenario-matrix-latest.json).
+16 attacks, 11 benign flows; deterministic, no API key, no network. All 16 attacks breach
+undefended, so none is vacuous, and each must block under the *specific* rule it was written
+to exercise.
 
-| Metric | Value |
-|---|---|
-| Attack scenarios | 12 |
-| Benign scenarios | 10 |
-| Undefended attack success rate (control) | **100%** (12/12) |
-| Containment rate through CapGate | **100%** (12/12) |
-| False-block rate on benign work | **10%** (1/10) |
+| Provenance | Rules | Containment | False-block rate |
+|---|---|---|---|
+| session-global | default | 75% (12/16) | 18.2% (2/11) |
+| session-global | `--strict-integrity` | 100% (16/16) | 54.5% (6/11) |
+| value-level | default | 75% (12/16) | 9.1% (1/11) |
+| value-level | `--strict-integrity` | **100%** (16/16) | **9.1%** (1/11) |
 
-Every attack runs undefended first as a control; all 12 breach without CapGate, so none is
-vacuous. Every attack is additionally required to block under the *specific* rule it was
-written to exercise, so a coincidental block does not count as containment. The single
-false block is `email-triage-then-public-reply`, refused because session-global taint marks
-the whole session untrusted after reading an injected email. Value-level provenance is
-expected to recover it.
+Value-level provenance ([design note](docs/design-notes/VALUE_LEVEL_PROVENANCE.md), now
+implemented) stores pass-through tool results behind unforgeable opaque references, so exact
+lineage travels outside the model while everything unreferenced falls back to session
+influence. That dissolves the coverage/utility tradeoff the 2026-08-17 status recorded: the
+strict integrity rule previously cost half the benign corpus and now costs one flow —
+`email-summary-needs-comprehension`, which is refused in every mode *by construction* because
+the planner must read the untrusted email raw. A test asserts that residual is never quietly
+recovered. The four destructive attacks remain uncontained under default rules in both
+provenance modes and are reported as the known gap.
 
 **This is not an ASR and is not comparable to published AgentDojo results.** It measures
 whether enforcement holds against a scripted planner that obeys every injected instruction
@@ -181,14 +186,15 @@ is not invoked; and three signed receipts replay without retaining the raw marke
 
 ## Ordered next steps
 
-1. Review, commit, and push the LangGraph/guide slice, then confirm both CI matrix jobs and both
-   offline demos pass in the remote workflow.
+1. ~~Add explicit argument/result provenance and freeze utility regressions caused by
+   conservative session taint.~~ **Done 2026-08-20** — value-level provenance implemented and
+   measured; the regression freeze is `tests/integration/test_scenarios.py`.
 2. Choose a license and create a `v0.1.0` research-prototype tag/release with the explicit nonclaims
    from the README.
 3. Agree a benchmark provider/model/cost/time matrix, then run identical clean-revision undefended
    and CapGate AgentDojo cases whose control attack actually succeeds.
-4. Add explicit argument/result provenance and freeze utility regressions caused by conservative
-   session taint.
+4. A CaMeL-style quarantined reader, to soundly recover comprehension-plus-external-send flows —
+   the one benign class value-level provenance cannot.
 5. Move sandbox validation to a supported Linux host; implement the trusted runner and egress broker
    before claiming isolation.
 6. Add pin re-approval and shared multi-server provenance, then generalize the tested LangGraph slice
@@ -204,11 +210,11 @@ is not invoked; and three signed receipts replay without retaining the raw marke
 .venv/bin/python examples/langgraph_security_demo.py
 ```
 
-Current result on Windows 11 / Python 3.13.2: Ruff passed, strict mypy passed across 84 source
-files, pytest passed **419 tests with 3 skips**, and both credential-free offline demos completed
-with every asserted control true. The 3 skips are POSIX-only pin-store permission and symlink
-tests. CI is configured for `ubuntu-latest` and `windows-latest` on Python 3.11 and 3.14, but no
-remote result is claimed here.
+Current result on Windows 11 / Python 3.13.2 (2026-08-20): Ruff passed, strict mypy passed
+across 96 source files, pytest passed **461 tests with 4 skips**, and both credential-free
+offline demos completed with every asserted control true. The skips are POSIX-only pin-store
+permission and symlink tests. CI runs `ubuntu-latest` and `windows-latest` on Python 3.11 and
+3.14; the first fully green remote run is commit `f7266a6`.
 
 ## Scope change — 2026-08-16
 

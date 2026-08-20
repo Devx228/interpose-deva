@@ -7,10 +7,13 @@
 > value-level provenance versus 58.3% under session taint. The single residual is
 > `email-summary-needs-comprehension` (raw comprehension), false-blocked in every mode by
 > construction; its quarantined counterpart passes for a receipted ~5.6-bit price, and the
-> extractor escape attempt is a contained attack in all four cells. Current baseline: 483
-> passed / 4 skipped, ruff and strict mypy clean, CI green on both OSes since `f7266a6`.
-> Numbers below from 2026-08-17 remain as history; STATUS.md and README.md carry the
-> current ones.
+> extractor escape attempt is a contained attack in all four cells. Also landed 2026-08-20:
+> **parallel multi-call turns** (serialized into the planner's emission order, with the
+> read-then-send discriminating test) and **chain-head anchoring** (`--anchor-file`; tail
+> deletion, log+key replacement, and a deleted anchor trail all fail anchored replay).
+> Current baseline: 499 passed / 4 skipped, ruff and strict mypy clean, CI green on both
+> OSes since `f7266a6`. Numbers below from 2026-08-17 remain as history; STATUS.md and
+> README.md carry the current ones.
 
 Every number here is reproducible from the repo. If you cannot reproduce one, treat it as
 wrong and fix this file rather than quoting it.

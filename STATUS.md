@@ -228,10 +228,10 @@ is not invoked; and three signed receipts replay without retaining the raw marke
 ```
 
 Current result on Windows 11 / Python 3.13.2 (2026-08-20): Ruff passed, strict mypy passed
-across 96 source files, pytest passed **461 tests with 4 skips**, and both credential-free
+across 101 source files, pytest passed **499 tests with 4 skips**, and both credential-free
 offline demos completed with every asserted control true. The skips are POSIX-only pin-store
 permission and symlink tests. CI runs `ubuntu-latest` and `windows-latest` on Python 3.11 and
-3.14; the first fully green remote run is commit `f7266a6`.
+3.14; green on every push since commit `f7266a6`.
 
 ## Scope change — 2026-08-16
 

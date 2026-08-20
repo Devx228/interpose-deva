@@ -79,7 +79,9 @@ Do not expand the matrix hoping the number improves.
 - **Parallel multi-call turns.** ✅ **DONE 2026-08-20** — sequential mediation in emission
   order via a condition-variable sequencer, exactly as designed; the read-secret + send
   discriminating test is in `tests/integration/test_langgraph_parallel.py`.
-- **External receipt anchoring.** Closes tail deletion.
+- **External receipt anchoring.** ✅ **DONE 2026-08-20** — `receipts/anchor.py`,
+  `--anchor-file` on proxy and replay; tail deletion, log+key replacement, and a deleted
+  anchor trail all fail anchored replay. Remaining: hardened anchor/key custody.
 - **Mapping the two source enums.** `OriginKind.WEB` emits a `web` tag that no deny pair
   matches. Fixing it tightens enforcement and changes which calls block, so it needs a
   deliberate decision.

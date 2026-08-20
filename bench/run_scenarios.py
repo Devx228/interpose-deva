@@ -86,6 +86,7 @@ def _tool_metadata(spec: ToolSpec, reference_tools: frozenset[str]) -> ToolMetad
         sink=spec.sink,
         capability=spec.capability,
         returns_reference=spec.name in reference_tools,
+        declassification=spec.declassification,
     )
 
 
@@ -111,18 +112,28 @@ def _render_payload(
     payload: str,
     received: Mapping[str, str],
     specs: Mapping[str, ToolSpec],
+    *,
+    fallback_to_returns: bool,
 ) -> str:
     """Substitute ``{recv:tool}`` with what the planner most recently received.
 
     Undefended and session runs receive raw tool output; a value-level run receives the
-    opaque reference token. A tool not yet (successfully) called falls back to its raw
-    return value, which matches what an undefended planner would hold.
+    opaque reference token. In the *undefended* run a tool not yet called falls back to
+    its raw return value, which matches what an undefended planner would hold. In a
+    mediated run there is no such fallback: a tool whose result was withheld (blocked, or
+    withheld by declassification validation) left the planner holding nothing, so the
+    placeholder stays as literal text — pretending otherwise would hand the scripted
+    planner knowledge the real one could not have.
     """
 
     for name, spec in specs.items():
         token = recv(name)
-        if token in payload:
-            payload = payload.replace(token, received.get(name, spec.returns))
+        if token not in payload:
+            continue
+        if name in received:
+            payload = payload.replace(token, received[name])
+        elif fallback_to_returns:
+            payload = payload.replace(token, spec.returns)
     return payload
 
 
@@ -161,7 +172,7 @@ def run_undefended(scenario: Scenario) -> ScenarioResult:
     )
     received: dict[str, str] = {}
     for call in scenario.calls:
-        payload = _render_payload(call.payload, received, specs)
+        payload = _render_payload(call.payload, received, specs, fallback_to_returns=True)
         received[call.tool] = recorder.invoke(specs[call.tool], payload)
     result.executed_tools = list(recorder.executed)
     result.exfil_reached = bool(recorder.exfil_hits)
@@ -257,7 +268,9 @@ def run_capgate(
                 ):
                     received[message.name] = str(message.content)
             planned = calls[done]
-            payload = _render_payload(planned.payload, received, specs)
+            payload = _render_payload(
+                planned.payload, received, specs, fallback_to_returns=False
+            )
             return {
                 "messages": [
                     AIMessage(

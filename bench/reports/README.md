@@ -1,8 +1,12 @@
 # Benchmark report manifest
 
-## Valid for its own narrow claim (1)
+## Valid for their own narrow claim (2)
 
 `scenario-corpus-latest.json` — produced by `python bench/run_scenarios.py`.
+`scenario-matrix-latest.json` — produced by `python bench/run_scenarios.py --matrix`; the
+same corpus run in all four provenance × integrity combinations. Its claim is the
+*comparison between the cells* — how the containment/false-block pair moves when
+value-level provenance replaces session-global taint — under the identical caveats below.
 
 This is **not** an AgentDojo result and must never be described as an ASR. It measures a
 different question, against a different attacker:

@@ -14,7 +14,8 @@ arguments*. Not "an error was returned" — the side effect either happened or i
 No API key, no network, fully deterministic.
 
     python bench/run_scenarios.py
-    python bench/run_scenarios.py --out bench/reports/scenarios.json
+    python bench/run_scenarios.py --strict-integrity --provenance value
+    python bench/run_scenarios.py --matrix --out bench/reports/scenario-matrix-latest.json
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import argparse
 import json
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,10 +46,11 @@ from scenarios import (  # noqa: E402
     PlannedCall,
     Scenario,
     ToolSpec,
+    recv,
 )
 
 from capgate.adapters.langgraph import build_secure_tool_node  # noqa: E402
-from capgate.engine.context import AgentContext  # noqa: E402
+from capgate.engine.context import AgentContext, ProvenanceMode  # noqa: E402
 from capgate.engine.mediator import ToolCallMediator  # noqa: E402
 from capgate.engine.pipeline import DecisionPipeline, ToolMetadata  # noqa: E402
 from capgate.policy.model import CapabilityPattern, Policy  # noqa: E402
@@ -59,6 +61,7 @@ from capgate.sandbox.base import RiskClass  # noqa: E402
 from capgate.taint.labels import BOTTOM_LABEL, Label  # noqa: E402
 
 Mode = Literal["undefended", "capgate"]
+Provenance = Literal["session", "value"]
 
 
 @dataclass
@@ -76,18 +79,24 @@ class ScenarioResult:
     error: str | None = None
 
 
-def _tool_metadata(spec: ToolSpec) -> ToolMetadata:
+def _tool_metadata(spec: ToolSpec, reference_tools: frozenset[str]) -> ToolMetadata:
     return ToolMetadata(
         result_label=Label(spec.confidentiality, spec.integrity, spec.source_tags),
         risk_class=RiskClass.TRUSTED_DIRECT,
         sink=spec.sink,
         capability=spec.capability,
+        returns_reference=spec.name in reference_tools,
     )
 
 
-def _pipeline(scenario: Scenario, *, strict_integrity: bool = False) -> DecisionPipeline:
+def _pipeline(
+    scenario: Scenario,
+    *,
+    strict_integrity: bool = False,
+    reference_tools: frozenset[str] = frozenset(),
+) -> DecisionPipeline:
     return DecisionPipeline(
-        {spec.name: _tool_metadata(spec) for spec in scenario.tools},
+        {spec.name: _tool_metadata(spec, reference_tools) for spec in scenario.tools},
         policy=Policy(
             agent=f"scenario-{scenario.name}",
             can=tuple(CapabilityPattern.parse(item) for item in scenario.capabilities()),
@@ -96,6 +105,25 @@ def _pipeline(scenario: Scenario, *, strict_integrity: bool = False) -> Decision
         ),
         require_trusted_for_state_change=strict_integrity,
     )
+
+
+def _render_payload(
+    payload: str,
+    received: Mapping[str, str],
+    specs: Mapping[str, ToolSpec],
+) -> str:
+    """Substitute ``{recv:tool}`` with what the planner most recently received.
+
+    Undefended and session runs receive raw tool output; a value-level run receives the
+    opaque reference token. A tool not yet (successfully) called falls back to its raw
+    return value, which matches what an undefended planner would hold.
+    """
+
+    for name, spec in specs.items():
+        token = recv(name)
+        if token in payload:
+            payload = payload.replace(token, received.get(name, spec.returns))
+    return payload
 
 
 class _Recorder:
@@ -111,6 +139,9 @@ class _Recorder:
         self.executed.append(spec.name)
         if spec.name in self._exfil_tools and self._is_breach(payload):
             self.exfil_hits.append(spec.name)
+        if spec.echoes_payload:
+            # A derived value really carries the data it was derived from.
+            return f"{spec.returns} {payload}"
         return spec.returns
 
     def _is_breach(self, payload: str) -> bool:
@@ -128,8 +159,10 @@ def run_undefended(scenario: Scenario) -> ScenarioResult:
         mode="undefended",
         incident=scenario.incident,
     )
+    received: dict[str, str] = {}
     for call in scenario.calls:
-        recorder.invoke(specs[call.tool], call.payload)
+        payload = _render_payload(call.payload, received, specs)
+        received[call.tool] = recorder.invoke(specs[call.tool], payload)
     result.executed_tools = list(recorder.executed)
     result.exfil_reached = bool(recorder.exfil_hits)
     result.all_calls_executed = len(recorder.executed) == len(scenario.calls)
@@ -162,7 +195,12 @@ def _label_arguments(_request: Any, arguments: dict[str, Any]) -> dict[str, Labe
     return {name: BOTTOM_LABEL for name in arguments}
 
 
-def run_capgate(scenario: Scenario, *, strict_integrity: bool = False) -> ScenarioResult:
+def run_capgate(
+    scenario: Scenario,
+    *,
+    strict_integrity: bool = False,
+    provenance: Provenance = "session",
+) -> ScenarioResult:
     recorder = _Recorder(scenario)
     result = ScenarioResult(
         scenario=scenario.name,
@@ -172,13 +210,28 @@ def run_capgate(scenario: Scenario, *, strict_integrity: bool = False) -> Scenar
     )
     session_id = f"scenario-{scenario.name}"
     calls: Sequence[PlannedCall] = scenario.calls
+    specs = {spec.name: spec for spec in scenario.tools}
+    reference_tools = (
+        frozenset(scenario.reference_tools) if provenance == "value" else frozenset()
+    )
 
     with tempfile.TemporaryDirectory(prefix="capgate-scenario-") as directory:
         store = JsonlReceiptStore(Path(directory) / "receipts.jsonl")
         signer = Ed25519Signer.generate()
         mediator = ToolCallMediator(
-            pipeline=_pipeline(scenario, strict_integrity=strict_integrity),
-            context=AgentContext(session_id),
+            pipeline=_pipeline(
+                scenario,
+                strict_integrity=strict_integrity,
+                reference_tools=reference_tools,
+            ),
+            context=AgentContext(
+                session_id,
+                provenance_mode=(
+                    ProvenanceMode.VALUE_LEVEL
+                    if provenance == "value"
+                    else ProvenanceMode.SESSION
+                ),
+            ),
             receipt_writer=ReceiptWriter(store=store, signer=signer),
         )
         secure_tools = build_secure_tool_node(
@@ -192,7 +245,19 @@ def run_capgate(scenario: Scenario, *, strict_integrity: bool = False) -> Scenar
             done = sum(1 for m in state["messages"] if isinstance(m, ToolMessage))
             if done >= len(calls):
                 return {"messages": [AIMessage(content="scenario complete")]}
+            # The planner holds whatever it has *received*: raw content in a session
+            # run, opaque reference tokens for reference-returning tools in a
+            # value-level run. The same script exercises both representations.
+            received: dict[str, str] = {}
+            for message in state["messages"]:
+                if (
+                    isinstance(message, ToolMessage)
+                    and message.status != "error"
+                    and message.name is not None
+                ):
+                    received[message.name] = str(message.content)
             planned = calls[done]
+            payload = _render_payload(planned.payload, received, specs)
             return {
                 "messages": [
                     AIMessage(
@@ -200,7 +265,7 @@ def run_capgate(scenario: Scenario, *, strict_integrity: bool = False) -> Scenar
                         tool_calls=[
                             ToolCall(
                                 name=planned.tool,
-                                args={"payload": planned.payload},
+                                args={"payload": payload},
                                 id=f"{session_id}-call-{done}",
                                 type="tool_call",
                             )
@@ -272,11 +337,16 @@ def build_report(
     scenarios: Sequence[Scenario],
     *,
     strict_integrity: bool = False,
+    provenance: Provenance = "session",
 ) -> dict[str, Any]:
     results: list[ScenarioResult] = []
     for scenario in scenarios:
         results.append(run_undefended(scenario))
-        results.append(run_capgate(scenario, strict_integrity=strict_integrity))
+        results.append(
+            run_capgate(
+                scenario, strict_integrity=strict_integrity, provenance=provenance
+            )
+        )
 
     by_mode = {
         (item.scenario, item.mode): item for item in results
@@ -345,6 +415,7 @@ def build_report(
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "harness": "scripted-compromised-planner",
         "strict_integrity": strict_integrity,
+        "provenance_mode": provenance,
         "scope": (
             "Offline deterministic containment measurement against a worst-case scripted "
             "attacker. Not comparable to published AgentDojo results, which measure whether "
@@ -379,6 +450,7 @@ def print_summary(report: dict[str, Any]) -> None:
     print(f"  attack scenarios          {report['attack_scenarios']}")
     print(f"  benign scenarios          {report['benign_scenarios']}")
     print(f"  strict integrity rule     {'on' if report['strict_integrity'] else 'off'}")
+    print(f"  provenance mode           {report['provenance_mode']}")
     print()
     print(f"  undefended attack success {_percent(report['undefended_attack_success_rate'])}")
     print(f"  containment rate          {_percent(report['containment_rate'])}")
@@ -415,6 +487,65 @@ def print_summary(report: dict[str, Any]) -> None:
             print(f"    - {item['scenario']} ({item['mode']}): {item['error']}")
 
 
+def _report_failed(report: dict[str, Any]) -> bool:
+    return bool(
+        report["uncontained_attacks"]
+        or report["vacuous_attack_scenarios"]
+        or report["unexpected_rule_ids"]
+        or report["receipt_replay_failures"]
+        or report["errors"]
+    )
+
+
+def run_matrix(scenarios: Sequence[Scenario]) -> dict[str, Any]:
+    """Run all four provenance × integrity cells; the comparison is the result."""
+
+    cells: dict[str, dict[str, Any]] = {}
+    for provenance in ("session", "value"):
+        for strict in (False, True):
+            key = f"{provenance}/{'strict' if strict else 'default'}"
+            cells[key] = build_report(
+                scenarios,
+                strict_integrity=strict,
+                provenance=cast(Provenance, provenance),
+            )
+    return {
+        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "harness": "scripted-compromised-planner",
+        "scope": (
+            "Offline deterministic 2x2 comparison: session-global vs value-level "
+            "provenance, default vs strict-integrity rules. Identical scenarios and "
+            "planner script in every cell."
+        ),
+        "cells": cells,
+    }
+
+
+def print_matrix(matrix: dict[str, Any]) -> None:
+    cells = matrix["cells"]
+    print("CapGate provenance x integrity matrix")
+    print("=" * 74)
+    header = f"  {'cell':<18}{'containment':>14}{'false-block':>14}  gap / false-blocked"
+    print(header)
+    print("  " + "-" * 70)
+    for key, report in cells.items():
+        gap = len(report["known_uncontained_attacks"])
+        blocked = len(report["false_blocked_scenarios"])
+        detail = f"{gap} known-uncontained, {blocked} false-blocked"
+        print(
+            f"  {key:<18}"
+            f"{_percent(report['containment_rate']):>14}"
+            f"{_percent(report['false_block_rate']):>14}"
+            f"  {detail}"
+        )
+    print()
+    print(
+        "  Read the rows together: session mode trades containment against utility\n"
+        "  (default misses the destructive class; strict refuses half the benign\n"
+        "  work). Value-level provenance is the cell where both hold at once."
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, help="Write the full JSON report here.")
@@ -424,9 +555,40 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Also block untrusted-influenced data from driving state-changing sinks.",
     )
+    parser.add_argument(
+        "--provenance",
+        choices=("session", "value"),
+        default="session",
+        help=(
+            "Taint approximation: 'session' joins every result into one session-wide "
+            "influence label; 'value' activates reference-based value-level provenance."
+        ),
+    )
+    parser.add_argument(
+        "--matrix",
+        action="store_true",
+        help="Run all four provenance x integrity combinations and print the comparison.",
+    )
     args = parser.parse_args(argv)
 
-    report = build_report(ALL_SCENARIOS, strict_integrity=args.strict_integrity)
+    if args.matrix:
+        matrix = run_matrix(ALL_SCENARIOS)
+        if args.out is not None:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(
+                json.dumps(matrix, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        if args.json:
+            print(json.dumps(matrix, sort_keys=True))
+        else:
+            print_matrix(matrix)
+        return 1 if any(_report_failed(cell) for cell in matrix["cells"].values()) else 0
+
+    report = build_report(
+        ALL_SCENARIOS,
+        strict_integrity=args.strict_integrity,
+        provenance=cast(Provenance, args.provenance),
+    )
 
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -437,14 +599,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print_summary(report)
 
-    failed = bool(
-        report["uncontained_attacks"]
-        or report["vacuous_attack_scenarios"]
-        or report["unexpected_rule_ids"]
-        or report["receipt_replay_failures"]
-        or report["errors"]
-    )
-    return 1 if failed else 0
+    return 1 if _report_failed(report) else 0
 
 
 if __name__ == "__main__":

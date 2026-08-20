@@ -99,8 +99,9 @@ work.
 Value-level provenance was the fix and it's the main thing I built. I kept the old mode
 available so I could measure the difference.
 
-I'd also flag that receipts have no external anchor — I can detect modification of retained
-entries, but not tail deletion.
+I'd also flag the audit chain's residual honestly: anchoring makes tail deletion detectable,
+but only relative to an anchor file whose own custody I don't provision — same-disk anchoring
+is a tripwire, not a guarantee.
 
 *(Naming your own weakness before being asked is the strongest move available in a technical
 interview. It signals you've actually thought about the system rather than just built it.)*
@@ -112,9 +113,12 @@ That these exact bytes were signed by the holder of that private key and haven't
 Not that the signer was uncompromised. Not that the decision was correct — a perfectly signed
 receipt can record a terrible policy decision.
 
-And the chain has a specific limit: it proves retained entries weren't modified, but tail
-deletion is invisible. Chop off the last three receipts and the rest verifies fine. Fixing that
-needs an external anchor — publishing the chain head somewhere I don't control.
+And the chain alone has a specific limit: it proves retained entries weren't modified, but
+tail deletion is invisible to it — chop off the last three receipts and the rest verifies
+fine. I built chain-head anchoring for exactly that: every append records the head in a
+separate file, and anchored replay fails on a truncated tail, a rebuilt log-and-key, or a
+deleted anchor trail. The claim I'd volunteer with it: the guarantee is exactly as strong as
+where the anchor file lives, which is the deployment's choice, not my code's.
 
 ## "Why hash the arguments instead of storing them?"
 
@@ -187,7 +191,8 @@ every mode.
 
 ## "What would you do with three more months?"
 
-External anchoring for the receipt chain — tail deletion is my biggest audit gap.
+Hardened custody for the receipt anchor — the anchoring mechanism exists, but making the
+"attacker cannot rewrite it" half true means real external storage and a key-custody story.
 
 Then explicit declassification. Right now labels only get more restrictive, which is safe but
 means long sessions eventually block everything. A reviewed, audited operation that lowers a

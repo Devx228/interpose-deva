@@ -181,7 +181,10 @@ See [`STATUS.md`](../STATUS.md) for the current implementation and measurement s
   the accepted pin. There is no explicit re-approval workflow.
 - **Shadow and provenance state is incomplete across processes.** Independent proxy processes do
   not share all server ownership and cross-server provenance decisions.
-- **Receipt history has no external anchor.** Signatures and chaining detect modification within the
+- **Receipt anchoring is only as strong as the anchor's storage.** With `--anchor-file`,
+  anchored replay detects tail deletion and log-plus-key replacement relative to the recorded
+  chain heads; an attacker who can rewrite the anchor file too defeats it, and no external
+  custody is provisioned here. Without the flag, signatures and chaining detect modification within the
   retained log, but do not prove that a tail was not deleted or that an entire log and key were not
   replaced. There is no remote transparency log or external timestamp/notarization service.
 - **Receipt durability follows execution.** A permitted side effect may complete before a receipt

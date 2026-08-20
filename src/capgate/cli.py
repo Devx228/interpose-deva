@@ -9,6 +9,7 @@ from capgate.config import CapgatePaths, ConfigError, load_deny_pairs, load_tool
 from capgate.engine.pipeline import DecisionPipeline
 from capgate.policy import PolicyError, load_policy
 from capgate.proxy.server import run_stdio_proxy
+from capgate.receipts.anchor import JsonlAnchorStore
 from capgate.receipts.replay import replay_session
 from capgate.receipts.signer import Ed25519Verifier
 
@@ -27,6 +28,15 @@ def build_parser() -> argparse.ArgumentParser:
     proxy.add_argument("--policy-file", type=Path)
     proxy.add_argument("--tool-metadata-file", type=Path)
     proxy.add_argument(
+        "--anchor-file",
+        type=Path,
+        help=(
+            "Record each receipt's chain head in this append-only file so tail deletion "
+            "is detectable at replay. Put it somewhere the receipt log's attacker cannot "
+            "rewrite."
+        ),
+    )
+    proxy.add_argument(
         "--downstream",
         nargs=argparse.REMAINDER,
         required=True,
@@ -37,6 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("session_id")
     replay.add_argument("--receipt-log", type=Path, default=defaults.receipt_log)
     replay.add_argument("--public-key-file", type=Path, default=defaults.public_key_file)
+    replay.add_argument(
+        "--anchor-file",
+        type=Path,
+        help="Also verify chain completeness against this anchor file.",
+    )
 
     return parser
 
@@ -65,13 +80,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 server_name=args.server_name,
                 decision_pipeline=decision_pipeline,
                 tool_pin_db=args.tool_pin_db,
+                anchor_file=args.anchor_file,
             )
         )
         return 0
 
     if args.command == "replay":
         verifier = Ed25519Verifier.from_public_key_file(args.public_key_file)
-        report = replay_session(args.receipt_log, args.session_id, verifier)
+        anchor_store = (
+            JsonlAnchorStore(args.anchor_file) if args.anchor_file is not None else None
+        )
+        report = replay_session(
+            args.receipt_log, args.session_id, verifier, anchor_store=anchor_store
+        )
         for line in report.to_lines():
             print(line)
         return 0

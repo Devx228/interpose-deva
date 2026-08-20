@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.serialization import (
 
 from capgate.engine.decision import Decision
 from capgate.proxy.events import ToolCallEvent, ToolResultEvent
+from capgate.receipts.anchor import AnchorStore, anchor_for
 from capgate.receipts.model import Receipt, SandboxAudit, hash_json
 from capgate.receipts.store import JsonlReceiptStore
 
@@ -108,9 +109,16 @@ class Ed25519Verifier:
 
 
 class ReceiptWriter:
-    def __init__(self, *, store: JsonlReceiptStore, signer: Ed25519Signer) -> None:
+    def __init__(
+        self,
+        *,
+        store: JsonlReceiptStore,
+        signer: Ed25519Signer,
+        anchor_store: AnchorStore | None = None,
+    ) -> None:
         self.store = store
         self.signer = signer
+        self.anchor_store = anchor_store
 
     def write_tool_call(
         self,
@@ -139,6 +147,10 @@ class ReceiptWriter:
         )
         signed = self.signer.sign_receipt(receipt)
         self.store.append(signed)
+        if self.anchor_store is not None:
+            # Anchor failure propagates: a deployment that asked for external memory of
+            # the chain head must not keep acting while that memory silently stops.
+            self.anchor_store.record(anchor_for(signed))
         return signed
 
 

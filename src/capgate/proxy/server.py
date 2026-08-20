@@ -13,6 +13,7 @@ from capgate.mcp_security.store import SqliteToolPinStore
 from capgate.proxy.client import StdioJsonRpcClient
 from capgate.proxy.events import JsonObject
 from capgate.proxy.session import ProxySession
+from capgate.receipts.anchor import JsonlAnchorStore
 from capgate.receipts.signer import Ed25519Signer, ReceiptWriter
 from capgate.receipts.store import JsonlReceiptStore
 
@@ -26,10 +27,15 @@ async def run_stdio_proxy(
     server_name: str,
     decision_pipeline: DecisionPipeline | None = None,
     tool_pin_db: Path | None = None,
+    anchor_file: Path | None = None,
 ) -> None:
     signer = Ed25519Signer.load_or_create(private_key_file, public_key_file)
     store = JsonlReceiptStore(receipt_log)
-    receipt_writer = ReceiptWriter(store=store, signer=signer)
+    receipt_writer = ReceiptWriter(
+        store=store,
+        signer=signer,
+        anchor_store=JsonlAnchorStore(anchor_file) if anchor_file is not None else None,
+    )
     downstream = StdioJsonRpcClient(downstream_command)
     await downstream.start()
     session = ProxySession(

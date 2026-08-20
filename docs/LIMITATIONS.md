@@ -111,9 +111,12 @@ answered here.
 **Pins are trust-on-first-use.** A malicious tool definition present at first observation
 becomes the accepted baseline. There is no re-approval workflow.
 
-**Receipts have no external anchor.** The signed chain detects modification of retained
-entries. It cannot detect deletion of the tail — truncate the last three receipts and the rest
-still verifies — nor replacement of the log and key together.
+**Receipt anchoring delegates its trust to file placement.** With `--anchor-file`, tail
+deletion and log-plus-key replacement fail anchored replay, and a missing anchor trail is an
+error rather than a pass. But the anchor file is plain JSONL: an attacker who can rewrite
+*both* the log and the anchor wins. The mechanism is real; the guarantee is exactly as strong
+as the storage the anchor lives on, and nothing here provisions that storage. Without the
+flag, the pre-existing gap stands: a truncated chain verifies.
 
 **Receipt durability follows execution.** An allowed side effect completes before its receipt
 is appended. A storage failure after the action cannot undo it.
@@ -209,7 +212,9 @@ In rough order of how much each would move the numbers:
 3. **Richer declassification domains with honest accounting** — bounded-length structured
    text is the obvious demand and the obvious hazard; any extension must keep the bits
    number true.
-4. **External receipt anchoring** — closes tail deletion.
+4. **Hardened anchor custody** — the anchoring mechanism exists; what would move the needle
+   is anchor storage the log's attacker provably cannot rewrite (another host, WORM storage,
+   a transparency log) and a key-custody story to match.
 5. **A privileged Linux environment** — the only way any isolation claim becomes real.
 
 ---

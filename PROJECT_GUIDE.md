@@ -632,7 +632,9 @@ Without an external checkpoint, replay cannot prove:
 - that the local clock was accurate; or
 - that a signed policy decision was semantically safe.
 
-External anchoring and stronger key custody are future work.
+Chain-head anchoring (`--anchor-file`, `receipts/anchor.py`) makes tail deletion and
+log-plus-key replacement detectable at replay; the anchor file's own custody, and stronger
+signing-key custody, remain the deployment's problem.
 
 ## 12. Telemetry and dual-model quarantine
 
@@ -1019,8 +1021,9 @@ first definition is safe.
 ### Minute 8: explain receipts
 
 Arguments/results are hashed, the receipt is signed with Ed25519, and receipts chain through previous
-hashes. Replay detects retained-log mutation. Then volunteer the limitation: no external anchor means
-tail deletion or log-and-key replacement is not excluded.
+hashes. Replay detects retained-log mutation, and anchored replay (`--anchor-file`) detects
+tail deletion and log-and-key replacement. Then volunteer the limitation: the anchor is only
+as trustworthy as the storage it lives on, which the deployment chooses.
 
 ### Minute 9: run or describe the demo
 

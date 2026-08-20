@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from capgate.receipts.anchor import AnchorStore, verify_anchor
 from capgate.receipts.model import Receipt
 from capgate.receipts.signer import Ed25519Verifier
 from capgate.receipts.store import JsonlReceiptStore
@@ -46,12 +47,29 @@ def replay_session(
     receipt_log: Path,
     session_id: str,
     verifier: Ed25519Verifier,
+    *,
+    anchor_store: AnchorStore | None = None,
 ) -> ReplayReport:
+    """Verify a session's chain; with an anchor store, also verify completeness.
+
+    Anchored verification fails closed in every direction: a session with no recorded
+    anchor is an error (an attacker who deleted the whole trail must not verify clean),
+    and a chain missing the anchored head — truncated tail or rebuilt log — is an error.
+    """
+
     store = JsonlReceiptStore(receipt_log)
     receipts = tuple(store.iter_receipts(session_id))
     if not receipts:
         raise ValueError("receipt session is absent or empty")
     verify_receipt_chain(receipts, verifier)
+    if anchor_store is not None:
+        anchor = anchor_store.latest(session_id)
+        if anchor is None:
+            raise ValueError(
+                "no chain anchor is recorded for this session; completeness cannot be "
+                "verified"
+            )
+        verify_anchor(receipts, anchor)
     return ReplayReport(session_id=session_id, receipts=receipts)
 
 

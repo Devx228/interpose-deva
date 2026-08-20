@@ -452,12 +452,18 @@ and baseline measurement. That mode is not a security control.
 ```bash
 capgate replay <session-id> \
   --receipt-log .capgate/receipts.jsonl \
-  --public-key-file .capgate/ed25519.public
+  --public-key-file .capgate/ed25519.public \
+  --anchor-file /somewhere/else/anchors.jsonl   # optional: completeness verification
 ```
 
-Replay verifies receipt sequence, previous hashes, version-specific schemas, and signatures. It
-detects mutation of retained entries; without an external anchor it cannot prove that a log tail was
-not deleted or that both the log and key were not replaced.
+Replay verifies receipt sequence, previous hashes, version-specific schemas, and signatures —
+that detects mutation of retained entries. With `--anchor-file` (written by the proxy's own
+`--anchor-file` flag, one chain-head record per receipt) it additionally verifies
+**completeness**: a truncated tail or a rebuilt log-plus-key no longer contains the anchored
+head and fails replay, and a session with no recorded anchor fails rather than passing. The
+anchor mechanism is only as trustworthy as where the file lives — put it where the receipt
+log's attacker cannot rewrite it (another host, append-only storage, a git remote). On the
+same disk it is a tripwire, not a guarantee.
 
 ## AgentDojo evaluation
 

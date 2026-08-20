@@ -170,7 +170,9 @@ is not invoked; and three signed receipts replay without retaining the raw marke
 - gVisor/Firecracker isolation, complete limits, digest binding, lifecycle cleanup, and egress
   enforcement have not been tested on a privileged Linux host.
 - Receipt append happens after an allowed side effect; a store failure cannot roll the action back.
-  The retained chain also has no external anchor that proves its tail was not deleted.
+  Chain-head anchoring (`--anchor-file`) makes tail deletion and log-plus-key replacement
+  detectable at replay, but the anchor file's own placement and custody are the deployment's
+  problem — nothing provisions storage the log's attacker cannot rewrite.
 - The dual-model boundary has no live provider or trusted opaque-value resolver.
 - The LangGraph slice is synchronous, supports the standard `ToolMessage` path, and requires
   trusted labels for every top-level argument. Multi-call turns are accepted but mediated
@@ -191,8 +193,9 @@ is not invoked; and three signed receipts replay without retaining the raw marke
 - This host is Windows 11 (previously Darwin arm64); `runsc`, Firecracker, Kata, KVM, and
   privileged Linux conformance are unavailable. Sandbox isolation is now out of scope rather
   than blocked.
-- No external receipt checkpoint/key-custody design exists for log completeness and replacement
-  resistance.
+- Chain-head anchoring exists (2026-08-20), but no hardened anchor custody or key-custody
+  design exists — completeness and replacement resistance currently reduce to where the
+  operator puts the anchor file.
 - No repository license has been selected. The code should not be described as open source until the
   owner chooses one.
 

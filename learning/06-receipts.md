@@ -133,11 +133,11 @@ The offline demo does exactly this, then tampers with one field and asserts repl
 
 This is the part worth being able to state unprompted.
 
-**Tail deletion is undetectable.** Chop off the last three receipts and the remaining chain
-verifies perfectly. Nothing in the log says how long it should be.
+**Tail deletion is undetectable — by the chain alone.** Chop off the last three receipts and
+the remaining chain verifies perfectly. Nothing in the log says how long it should be.
 
-**Log-and-key replacement is undetectable.** An attacker with both files can regenerate a fully
-valid chain saying whatever they like.
+**Log-and-key replacement is undetectable — by the chain alone.** An attacker with both files
+can regenerate a fully valid chain saying whatever they like.
 
 **A side effect can precede its receipt.** Look at the ordering in
 [`mediator.py:131-181`](../src/capgate/engine/mediator.py#L131-L181): `execute()` runs, *then*
@@ -145,9 +145,15 @@ the receipt is written. If the store fails after a successful send, the email is
 is no record. The code marks the session failed-closed so nothing further proceeds — but it
 cannot un-send an email. Software cannot roll back the outside world.
 
-**The fix for the first two** is an external anchor: publish the chain head somewhere you do not
-control (a transparency log, a timestamping service, another team's storage). Then a truncated
-log no longer matches the published head. This is not built — it's on the roadmap.
+**The fix for the first two** is an external anchor, and it is built
+([`receipts/anchor.py`](../src/capgate/receipts/anchor.py)): with `--anchor-file`, every
+append also records the chain head — session, sequence, receipt hash — and anchored replay
+demands the chain still *contain* that head, hash-identical. A truncated tail fails ("head
+missing"); a rebuilt log-plus-key fails ("hash mismatch"); a deleted anchor trail fails
+("no anchor recorded") instead of passing. The tests demonstrate all three, including the
+one plain replay cannot catch. The honest half of the claim: the mechanism delegates its
+trust to *where the anchor file lives*. On the same disk as the log it is a tripwire; on
+storage the log's attacker cannot rewrite, it is a guarantee.
 
 Being able to volunteer these limits is worth more than the feature itself. Anyone can say
 "it's cryptographically signed." Knowing precisely what that does and does not buy you is the

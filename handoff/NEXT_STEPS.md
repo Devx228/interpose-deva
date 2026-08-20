@@ -76,9 +76,9 @@ Do not expand the matrix hoping the number improves.
   project has attacked it.
 - **Explicit declassification.** Labels only ever get more restrictive, so long sessions
   accumulate restriction with no legitimate release. A hard utility ceiling.
-- **Parallel multi-call turns.** `ToolNode` dispatches via `executor.map`, so deterministic
-  ordering needs a sequencer. Designed, not built — sequential mediation in emission order,
-  because a barrier would let a read-secret + send pair both pass against clean pre-turn state.
+- **Parallel multi-call turns.** ✅ **DONE 2026-08-20** — sequential mediation in emission
+  order via a condition-variable sequencer, exactly as designed; the read-secret + send
+  discriminating test is in `tests/integration/test_langgraph_parallel.py`.
 - **External receipt anchoring.** Closes tail deletion.
 - **Mapping the two source enums.** `OriginKind.WEB` emits a `web` tag that no deny pair
   matches. Fixing it tightens enforcement and changes which calls block, so it needs a

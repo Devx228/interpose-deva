@@ -212,18 +212,21 @@ And the rule that shaped the harness: **an inconclusive run is not evidence the 
 worked** — it means the attack never happened. Only
 `MODEL_ATTEMPTED_EXFILTRATION_CAPGATE_BLOCKED_IT` demonstrates enforcement.
 
-## Phase 5 — Parallel multi-call turns (3 days)
+## Phase 5 — Parallel multi-call turns ✅ DONE
 
-Remove a real compatibility limitation. Today
-[`_require_single_tool_call_turn`](../src/capgate/adapters/langgraph.py#L192) rejects turns with
-more than one call — but real agents batch.
+Real agents batch, and the adapter now accepts it. The security question was the whole
+phase: what order do taint updates take when calls run concurrently? **Sequential mediation
+in the planner's emission order** won, because the alternative — a barrier judging every
+call against pre-turn state — would let a read-secret + send pair emitted together both
+pass. The discriminating test exists and the barrier design fails it.
 
-The security question: what is the correct order for taint updates when calls run
-concurrently? Options are sequential mediation (safe, slower) or a barrier where all decisions
-are made against the pre-turn state before any executes. Pick one, document why.
-
-**Done when:** a parallel turn is mediated deterministically, with a test proving the verdict
-does not depend on completion order.
+Mechanics worth being able to explain: a `_TurnSequencer` (condition variable keyed on the
+turn's call-ID tuple, taken from the turn's own `AIMessage`) makes call *k* wait for calls
+`0..k-1`. Deadlock-freedom follows from `ToolNode` submitting the batch in emission order to
+a FIFO thread pool — the earliest unfinished call always holds a worker — with a timeout
+that fails the run closed rather than ever mediating out of order. Approval pausing is
+refused in batches: a resumed multi-call turn would re-execute its finished siblings.
+Tests: [`test_langgraph_parallel.py`](../tests/integration/test_langgraph_parallel.py).
 
 ## Phase 6 — Declassification ✅ DONE (landed ahead of Phase 5)
 
@@ -248,7 +251,8 @@ design record.
 | 4 | Phase 3 — attack corpus | ✅ done early |
 | 5 | Phase 4 — approval via `interrupt()` | ✅ done early |
 | 6 | Phase 6 — declassification | ✅ done early — see chapter [12](12-declassification.md) |
-| — | Phase 5 — parallel turns, then docs and a demo recording | next |
+| — | Phase 5 — parallel turns | ✅ done |
+| — | Docs polish and a demo recording | next |
 
 Phase 3 landed ahead of Phase 2 because it does not depend on it — and having the corpus
 *first* is better, since it gives Phase 2 a before/after number to move.

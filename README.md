@@ -165,7 +165,8 @@ It allows a harmless status call and a synthetic private read, then blocks the p
 untrusted-influenced value from reaching a synthetic external sink. The sink handler is never
 called, the three signed receipts replay, and the raw marker is absent from the receipt log. The
 adapter validates schema-coerced arguments against trusted caller-supplied labels and rejects
-multi-call turns or state/store/runtime-injected tool arguments in this v0.1 slice.
+state/store/runtime-injected tool arguments in this v0.1 slice; multi-call turns are
+accepted and mediated serially in the planner's emission order.
 
 ## Run the real-model injection demo (optional)
 

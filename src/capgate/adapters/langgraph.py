@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+from threading import Condition
 from typing import TYPE_CHECKING, Any
 
 from capgate.engine.decision import Decision
@@ -33,6 +35,57 @@ class ToolCallRejected(RuntimeError):
     def __init__(self, decision: Decision) -> None:
         self.decision = decision
         super().__init__(decision.reason)
+
+
+class _TurnSequencer:
+    """Serialize a multi-call turn's mediations into the planner's emission order.
+
+    `ToolNode` dispatches a turn's calls concurrently, and thread scheduling is not a
+    security order: judged against clean pre-turn state, a read-secret + send pair would
+    both pass. So each call waits for its slot — call *k* mediates only after calls
+    ``0..k-1`` have finished mediating — which makes every decision see the taint the
+    earlier calls in the same turn produced, exactly as if the planner had issued them
+    one turn apart.
+
+    Deadlock-freedom rests on how `ToolNode` runs the batch: it submits the calls in
+    emission order to a FIFO thread-pool executor, so whenever call *k* is running,
+    every earlier call has already been picked up by some worker. The earliest
+    unfinished call therefore always holds a worker and can make progress; only
+    later-index calls ever wait. The timeout is a fail-closed backstop for executors
+    that do not satisfy that property — expiry raises, which aborts the run rather
+    than executing out of order.
+    """
+
+    def __init__(self, timeout_seconds: float = 30.0) -> None:
+        self._condition = Condition()
+        self._turn: tuple[str, ...] | None = None
+        self._next = 0
+        self._timeout = timeout_seconds
+
+    @contextmanager
+    def slot(self, order: tuple[str, ...], call_id: str) -> Iterator[None]:
+        index = order.index(call_id)
+        with self._condition:
+            if self._turn != order or self._next >= len(order):
+                # First arrival of a new turn (or of a repeat of a finished turn).
+                self._turn = order
+                self._next = 0
+            granted = self._condition.wait_for(
+                lambda: self._turn == order and self._next == index,
+                timeout=self._timeout,
+            )
+            if not granted:
+                raise ValueError(
+                    "CapGate turn sequencing timed out waiting for an earlier tool call; "
+                    "failing closed instead of mediating out of order"
+                )
+        try:
+            yield
+        finally:
+            with self._condition:
+                if self._turn == order and self._next == index:
+                    self._next += 1
+                    self._condition.notify_all()
 
 
 def to_tool_call_event(
@@ -95,11 +148,17 @@ def build_secure_tool_node(
     server: str = "langgraph",
     approve: Callable[[Decision], bool] | None = None,
 ) -> ToolNode:
-    """Build a single-call LangGraph ToolNode whose labeled calls pass through CapGate.
+    """Build a LangGraph ToolNode whose labeled calls pass through CapGate.
+
+    Multi-call turns are supported by *serializing* them: each call's mediation waits for
+    its slot in the planner's emission order, so every decision sees the taint produced by
+    the earlier calls of the same turn. Thread scheduling never becomes a security order.
 
     ``approve`` resolves `REQUIRE_APPROVAL` verdicts. Pass `interrupt_for_approval` to
     pause the graph for a human, or leave it `None` to keep refusing such calls. A grant
-    satisfies only the capability gate; flow rules still run afterwards.
+    satisfies only the capability gate; flow rules still run afterwards. Approval pausing
+    is offered only in single-call turns — a resumed multi-call turn would re-execute its
+    finished siblings — so batched approval-required calls are refused instead.
     """
 
     try:
@@ -113,11 +172,13 @@ def build_secure_tool_node(
     if not session_id or not server:
         raise ValueError("LangGraph session and server identity must be non-empty")
 
+    sequencer = _TurnSequencer()
+
     def wrap_tool_call(
         request: ToolCallRequest,
         execute: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
     ) -> ToolMessage | Command[Any]:
-        _require_single_tool_call_turn(request)
+        turn_order = _turn_plan(request)
         call = _from_langgraph_call(request.tool_call)
         if request.tool is not None:
             if _has_injected_arguments(request.tool):
@@ -162,18 +223,24 @@ def build_secure_tool_node(
                 type="tool_call",
             )
         )
-        outcome = mediator.mediate(
-            event,
-            lambda: execute(execution_request),
-            result_to_json=lambda result: _langgraph_result_to_json(
-                result,
-                expected_name=call.name,
-                expected_call_id=call.call_id,
-            ),
-            argument_labels=argument_labels,
-            approve=approve,
-            result_payload=_langgraph_result_payload,
-        )
+        # Approval works by suspending the graph, and a resumed multi-call turn would
+        # re-run its already-executed siblings — a duplicated side effect. So a pause is
+        # only offered in single-call turns; in a batch, approval-required calls are
+        # refused outright, which is the fail-closed reading of "nobody could answer".
+        effective_approve = approve if len(turn_order) == 1 else None
+        with sequencer.slot(turn_order, call.call_id):
+            outcome = mediator.mediate(
+                event,
+                lambda: execute(execution_request),
+                result_to_json=lambda result: _langgraph_result_to_json(
+                    result,
+                    expected_name=call.name,
+                    expected_call_id=call.call_id,
+                ),
+                argument_labels=argument_labels,
+                approve=effective_approve,
+                result_payload=_langgraph_result_payload,
+            )
         if outcome.decision.verdict == "ALLOW":
             if outcome.value is None:
                 raise RuntimeError("CapGate allowed a tool call without a result")
@@ -264,7 +331,15 @@ def _argument_provenance(call: LangGraphToolCall, server: str) -> dict[str, str]
     }
 
 
-def _require_single_tool_call_turn(request: ToolCallRequest) -> None:
+def _turn_plan(request: ToolCallRequest) -> tuple[str, ...]:
+    """Return the turn's call IDs in the planner's emission order, validated.
+
+    The order comes from the turn's own `AIMessage` — the one artifact the planner
+    actually produced — never from thread scheduling. The current call must appear in it
+    exactly once, and every ID in the turn must be a unique non-empty string, because
+    these IDs are what the sequencer keys slots on.
+    """
+
     from langchain_core.messages import AIMessage
 
     state = request.state
@@ -277,14 +352,26 @@ def _require_single_tool_call_turn(request: ToolCallRequest) -> None:
     if not isinstance(messages, list) or not messages:
         raise ValueError("CapGate v0.1 requires a standard LangGraph messages state")
     last_message = messages[-1]
-    if not isinstance(last_message, AIMessage) or len(last_message.tool_calls) != 1:
-        raise ValueError("CapGate v0.1 requires exactly one tool call per LangGraph turn")
-    only_call = last_message.tool_calls[0]
-    if (
-        only_call.get("id") != request.tool_call.get("id")
-        or only_call.get("name") != request.tool_call.get("name")
-    ):
-        raise ValueError("LangGraph tool request does not match the current single-call turn")
+    if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
+        raise ValueError("CapGate requires the turn's tool calls in the last AIMessage")
+    order: list[str] = []
+    for turn_call in last_message.tool_calls:
+        call_id = turn_call.get("id")
+        if not isinstance(call_id, str) or not call_id:
+            raise ValueError("every LangGraph tool call in a turn needs a non-empty ID")
+        order.append(call_id)
+    if len(set(order)) != len(order):
+        raise ValueError("LangGraph turn contains duplicate tool call IDs")
+    current_id = request.tool_call.get("id")
+    current_name = request.tool_call.get("name")
+    matched = [
+        turn_call
+        for turn_call in last_message.tool_calls
+        if turn_call.get("id") == current_id
+    ]
+    if len(matched) != 1 or matched[0].get("name") != current_name:
+        raise ValueError("LangGraph tool request does not match the current turn")
+    return tuple(order)
 
 
 def _validated_tool_arguments(tool: BaseTool, arguments: JsonObject) -> JsonObject:

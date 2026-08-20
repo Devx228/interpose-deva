@@ -227,7 +227,7 @@ def test_first_turn_private_argument_is_blocked_before_external_sink(tmp_path: P
     assert "SYNTHETIC_PRIVATE" not in store.path.read_text(encoding="utf-8")
 
 
-def test_multi_call_turn_is_rejected_before_any_handler_runs(tmp_path: Path) -> None:
+def test_multi_call_turn_executes_in_emission_order(tmp_path: Path) -> None:
     executed: list[str] = []
 
     @tool
@@ -265,17 +265,57 @@ def test_multi_call_turn_is_rejected_before_any_handler_runs(tmp_path: Path) -> 
         )
     )
 
-    with pytest.raises(ValueError, match="exactly one tool call"):
+    _invoke_calls(
+        graph,
+        [
+            ToolCall(name="first", args={}, id="first-1", type="tool_call"),
+            ToolCall(name="second", args={}, id="second-1", type="tool_call"),
+        ],
+    )
+
+    assert executed == ["first", "second"]
+    receipts = store.iter_receipts(session_id)
+    assert [receipt.tool for receipt in receipts] == ["first", "second"]
+
+
+def test_duplicate_call_ids_in_a_turn_are_rejected(tmp_path: Path) -> None:
+    executed: list[str] = []
+
+    @tool
+    def first() -> str:
+        """First synthetic tool."""
+
+        executed.append("first")
+        return "first"
+
+    session_id = "langgraph-duplicate-ids"
+    mediator = ToolCallMediator(
+        pipeline=DecisionPipeline({"first": _public_metadata()}),
+        context=AgentContext(session_id),
+        receipt_writer=ReceiptWriter(
+            store=JsonlReceiptStore(tmp_path / "dup.jsonl"),
+            signer=Ed25519Signer.generate(),
+        ),
+    )
+    graph = _compile_tool_graph(
+        build_secure_tool_node(
+            [first],
+            mediator=mediator,
+            session_id=session_id,
+            label_arguments=_label_public_arguments,
+        )
+    )
+
+    with pytest.raises(ValueError, match="duplicate tool call IDs"):
         _invoke_calls(
             graph,
             [
-                ToolCall(name="first", args={}, id="first-1", type="tool_call"),
-                ToolCall(name="second", args={}, id="second-1", type="tool_call"),
+                ToolCall(name="first", args={}, id="same-id", type="tool_call"),
+                ToolCall(name="first", args={}, id="same-id", type="tool_call"),
             ],
         )
 
     assert executed == []
-    assert store.iter_receipts(session_id) == []
 
 
 def test_injected_tool_arguments_are_rejected_when_node_is_built(tmp_path: Path) -> None:

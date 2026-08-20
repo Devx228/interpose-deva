@@ -63,7 +63,7 @@ construction, not an accident.
 | Decision pipeline, fail-closed | [`engine/pipeline.py`](../src/capgate/engine/pipeline.py) | Working |
 | Framework-neutral mediator | [`engine/mediator.py`](../src/capgate/engine/mediator.py) | Working |
 | Signed hash-chained receipts + replay | [`receipts/`](../src/capgate/receipts/) | Working |
-| LangGraph `ToolNode` adapter | [`adapters/langgraph.py`](../src/capgate/adapters/langgraph.py) | Working, single-call turns only |
+| LangGraph `ToolNode` adapter | [`adapters/langgraph.py`](../src/capgate/adapters/langgraph.py) | Working; multi-call turns serialized in emission order |
 | MCP stdio proxy | [`proxy/`](../src/capgate/proxy/) | Working — **frozen**, not being extended |
 | MCP tool-definition pinning (TOFU) | [`mcp_security/`](../src/capgate/mcp_security/) | Working |
 | OTel decision spans | [`telemetry/otel.py`](../src/capgate/telemetry/otel.py) | Working with an injected exporter |
@@ -156,7 +156,8 @@ Straight from [`STATUS.md`](../STATUS.md), and worth internalising:
 - No real process, filesystem, syscall, network, or VM isolation — gVisor and Firecracker are
   request builders tested against fake runners
 - No live dual-model provider flow
-- No LangGraph compatibility beyond the tested synchronous single-call slice
+- No LangGraph compatibility beyond the tested synchronous slice (multi-call turns are
+  serialized, never actually concurrent; no streaming or `Command` support)
 
 The 16 checked-in benchmark reports in [`bench/reports/`](../bench/reports/) are **all** marked
 invalid for defense claims in [their manifest](../bench/reports/README.md) — wrong ASR

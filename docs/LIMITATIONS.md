@@ -126,8 +126,13 @@ tools block rather than running unsandboxed, which is safe but is not isolation.
 as a bare tag, and some are not `DataSourceKind` members — `OriginKind.WEB` yields `web`, which
 matches no deny pair. Those tools rely on the trifecta rule alone.
 
-**Single-call turns only.** The LangGraph adapter rejects parallel tool calls, because
-`ToolNode` dispatches concurrently and thread scheduling is not a deterministic security order.
+**Parallel turns are serialized, not parallel.** The adapter accepts multi-call turns but
+mediates them strictly in the planner's emission order — each call's decision sees the taint
+its earlier siblings produced, and a sequencing timeout fails the run closed rather than ever
+mediating out of order. The cost is that batched calls lose their concurrency, and approval
+pausing is refused in batches (a resumed turn would re-execute finished siblings). The
+deadlock-freedom argument assumes `ToolNode`'s FIFO executor; an exotic executor degrades to
+the fail-closed timeout, not to reordering.
 
 **Declassification is narrow by design.** The only way a label moves down is a declared
 extractor whose output fits closed domains (bool, bounded int, string enum) — never free

@@ -172,12 +172,15 @@ is not invoked; and three signed receipts replay without retaining the raw marke
 - Receipt append happens after an allowed side effect; a store failure cannot roll the action back.
   The retained chain also has no external anchor that proves its tail was not deleted.
 - The dual-model boundary has no live provider or trusted opaque-value resolver.
-- The LangGraph slice is synchronous, serializes calls per mediator, supports the standard
-  `ToolMessage` path, and requires trusted labels for every top-level argument. It rejects
-  multi-call turns, injected state/store/runtime arguments, Pydantic v1 or custom-transform tool
-  schemas, non-idempotent normalization, and `Command` results; it has no sandbox executor,
-  streaming/checkpoint/interrupt proof, or broad compatibility claim. Each isolated graph run must
-  use a fresh mediator/context/session. OpenAI Agents SDK and Pydantic AI adapters are absent.
+- The LangGraph slice is synchronous, supports the standard `ToolMessage` path, and requires
+  trusted labels for every top-level argument. Multi-call turns are accepted but mediated
+  serially in the planner's emission order (concurrency is deliberately given up; a sequencing
+  timeout fails closed; approval pausing is refused in batches because a resumed turn would
+  re-execute finished siblings). It rejects injected state/store/runtime arguments, Pydantic v1
+  or custom-transform tool schemas, non-idempotent normalization, and `Command` results; it has
+  no sandbox executor, streaming proof, or broad compatibility claim. Each isolated graph run
+  must use a fresh mediator/context/session. OpenAI Agents SDK and Pydantic AI adapters are
+  absent.
 - No live adaptive attack generator, automated red-team loop, or representative benchmark matrix is
   present.
 

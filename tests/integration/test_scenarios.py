@@ -50,11 +50,13 @@ def test_default_mode_contains_everything_except_the_known_gap(
 ) -> None:
     """Freeze the gap so it cannot widen silently, or be quietly forgotten."""
 
-    assert set(default_report["uncontained_attacks"]) == KNOWN_UNCONTAINED_BY_DEFAULT
+    assert default_report["uncontained_attacks"] == []
+    assert set(default_report["known_uncontained_attacks"]) == KNOWN_UNCONTAINED_BY_DEFAULT
 
 
 def test_strict_integrity_contains_every_attack(strict_report: dict[str, Any]) -> None:
     assert strict_report["uncontained_attacks"] == []
+    assert strict_report["known_uncontained_attacks"] == []
     assert strict_report["containment_rate"] == 1.0
     assert strict_report["unexpected_rule_ids"] == []
 

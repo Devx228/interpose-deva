@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
-from capgate.engine.context import AgentContext
+from capgate.engine.context import AgentContext, ProvenanceMode
 from capgate.engine.decision import Decision
 from capgate.flow.rules import DEFAULT_DENY_PAIRS, DenyPair, check_flow, label_strings
 from capgate.flow.sinks import SinkKind
 from capgate.policy.enforce import enforce
 from capgate.policy.model import Policy
-from capgate.proxy.events import ToolCallEvent, ToolResultEvent
+from capgate.proxy.events import JsonValue, ToolCallEvent, ToolResultEvent
 from capgate.sandbox.base import RiskClass, SandboxRoute, route_backend
 from capgate.taint.labels import Label
 from capgate.taint.propagation import propagate_tool_result
@@ -21,6 +21,10 @@ class ToolMetadata:
     risk_class: RiskClass
     sink: SinkKind = SinkKind.NONE
     capability: str | None = None
+    #: When True and the session runs in value-level provenance mode, this tool's result
+    #: is stored behind an opaque reference and the planner receives the token instead of
+    #: the raw value. Ignored entirely in session mode.
+    returns_reference: bool = False
 
 
 class DecisionPipeline:
@@ -118,11 +122,39 @@ class DecisionPipeline:
         context: AgentContext,
         call_event: ToolCallEvent,
         result_event: ToolResultEvent,
-    ) -> None:
+        *,
+        payload: JsonValue | None = None,
+    ) -> str | None:
+        """Record a result's provenance; return a reference when the tool mints one.
+
+        A reference-returning tool's result (``payload`` when the framework projects one,
+        else the full result) is stored under an unguessable token carrying the exact
+        result label, and the session influence join is skipped: the planner receives only
+        the token, so the raw value cannot have influenced it and cannot be re-emitted
+        from memory. Every other tool joins session influence exactly as before.
+        """
+
         metadata = self._tool_metadata[call_event.tool]
         argument_label = context.label_for_call(tuple(call_event.arg_provenance.values()))
         result_label = propagate_tool_result(argument_label, metadata.result_label)
-        context.record_result(_provenance_id(result_event), result_label)
+        reference: str | None = None
+        joins_influence = True
+        if (
+            metadata.returns_reference
+            and context.provenance_mode is ProvenanceMode.VALUE_LEVEL
+        ):
+            stored = context.values.store(
+                result_label,
+                payload if payload is not None else result_event.result,
+            )
+            reference = stored.reference
+            joins_influence = False
+        context.record_result(
+            _provenance_id(result_event),
+            result_label,
+            joins_influence=joins_influence,
+        )
+        return reference
 
     def route_execution(self, tool: str) -> SandboxRoute:
         metadata = self._tool_metadata.get(tool)

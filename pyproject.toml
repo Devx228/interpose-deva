@@ -56,3 +56,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
+
+# The [ollama] extra is demo-only and deliberately not part of the dev or CI environment;
+# no provider package ever sits in the enforcement path. Checking the demos must not
+# require installing one.
+[[tool.mypy.overrides]]
+module = ["langchain_ollama", "langchain_ollama.*"]
+ignore_missing_imports = true

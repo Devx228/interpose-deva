@@ -6,12 +6,14 @@ from dataclasses import dataclass, replace
 from threading import Lock
 from typing import Generic, TypeVar, cast
 
-from capgate.engine.context import AgentContext
+from capgate.engine.context import AgentContext, ProvenanceMode
 from capgate.engine.decision import Decision
 from capgate.engine.pipeline import DecisionPipeline
 from capgate.proxy.events import JsonObject, JsonValue, ToolCallEvent, ToolResultEvent
 from capgate.receipts.signer import ReceiptWriter
 from capgate.taint.labels import Label
+from capgate.taint.propagation import join_labels
+from capgate.taint.values import resolve_argument
 
 ResultT = TypeVar("ResultT")
 
@@ -23,6 +25,22 @@ class MediationOutcome(Generic[ResultT]):
     decision: Decision
     executed: bool
     value: ResultT | None
+    #: Set when the tool is reference-returning in value-level mode. The adapter must show
+    #: the planner this token instead of the raw result; the receipt already recorded the
+    #: real result's hash.
+    reference: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedArguments:
+    """Arguments after reference resolution, with the exact labels resolution proved."""
+
+    arguments: JsonObject
+    #: Per top-level argument, the join of every reference label resolved inside it.
+    #: Missing keys mean nothing resolved there. These labels are additions to the
+    #: caller's declared label, never replacements.
+    reference_labels: Mapping[str, Label]
+    substituted: bool
 
 
 class ToolCallMediator:
@@ -41,6 +59,40 @@ class ToolCallMediator:
         self._lock = Lock()
         self._failed_closed = False
 
+    @property
+    def provenance_mode(self) -> ProvenanceMode:
+        return self._context.provenance_mode
+
+    def resolve_arguments(self, arguments: JsonObject) -> ResolvedArguments:
+        """Substitute stored values for references in the call's arguments.
+
+        In session mode this is the identity: no store is consulted and no label is
+        produced, so existing behavior is untouched. In value-level mode each top-level
+        argument is walked, resolvable tokens are replaced with the values they name, and
+        the exact labels of those values are returned so the adapter can join them into
+        the declared argument labels. Unresolvable tokens stay inert.
+        """
+
+        if self._context.provenance_mode is not ProvenanceMode.VALUE_LEVEL:
+            return ResolvedArguments(
+                arguments=arguments, reference_labels={}, substituted=False
+            )
+        with self._lock:
+            resolved_arguments: JsonObject = {}
+            reference_labels: dict[str, Label] = {}
+            substituted = False
+            for name, value in arguments.items():
+                resolution = resolve_argument(value, self._context.values)
+                resolved_arguments[name] = cast(JsonValue, resolution.value)
+                if resolution.labels:
+                    reference_labels[name] = join_labels(resolution.labels)
+                substituted = substituted or resolution.substituted
+            return ResolvedArguments(
+                arguments=resolved_arguments,
+                reference_labels=reference_labels,
+                substituted=substituted,
+            )
+
     def mediate(
         self,
         event: ToolCallEvent,
@@ -49,6 +101,7 @@ class ToolCallMediator:
         result_to_json: Callable[[ResultT], JsonValue] | None = None,
         argument_labels: Mapping[str, Label] | None = None,
         approve: Callable[[Decision], bool] | None = None,
+        result_payload: Callable[[ResultT], JsonValue] | None = None,
     ) -> MediationOutcome[ResultT]:
         """Mediate one direct tool call and return a sanitized outcome.
 
@@ -67,7 +120,7 @@ class ToolCallMediator:
 
         with self._lock:
             return self._mediate_locked(
-                event, execute, result_to_json, argument_labels, approve
+                event, execute, result_to_json, argument_labels, approve, result_payload
             )
 
     def _mediate_locked(
@@ -77,6 +130,7 @@ class ToolCallMediator:
         result_to_json: Callable[[ResultT], JsonValue] | None,
         argument_labels: Mapping[str, Label] | None,
         approve: Callable[[Decision], bool] | None = None,
+        result_payload: Callable[[ResultT], JsonValue] | None = None,
     ) -> MediationOutcome[ResultT]:
         if self._failed_closed:
             return self._rejected(
@@ -158,6 +212,9 @@ class ToolCallMediator:
 
         try:
             json_result = _json_result(result, result_to_json)
+            payload = (
+                _json_result(result, result_payload) if result_payload is not None else None
+            )
         except Exception:
             self._failed_closed = True
             return self._rejected(
@@ -173,7 +230,9 @@ class ToolCallMediator:
 
         result_event = _result_event(event, json_result)
         try:
-            self._pipeline.observe_result(self._context, event, result_event)
+            reference = self._pipeline.observe_result(
+                self._context, event, result_event, payload=payload
+            )
         except Exception:
             self._failed_closed = True
             return self._rejected(
@@ -203,7 +262,9 @@ class ToolCallMediator:
                 executed=True,
                 value=None,
             )
-        return MediationOutcome(decision=decision, executed=True, value=result)
+        return MediationOutcome(
+            decision=decision, executed=True, value=result, reference=reference
+        )
 
     def _resolve_approval(
         self,

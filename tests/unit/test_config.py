@@ -62,6 +62,42 @@ tools:
 
     assert metadata.result_label.source_tags == frozenset()
     assert metadata.sink is SinkKind.NONE
+    assert metadata.returns_reference is False
+
+
+def test_returns_reference_is_parsed(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+tools:
+  read_secret:
+    capability: read:private
+    confidentiality: secret
+    integrity: trusted
+    risk_class: trusted_direct
+    returns_reference: true
+""",
+    )
+
+    assert load_tool_metadata(path)["read_secret"].returns_reference is True
+
+
+def test_returns_reference_must_be_a_boolean(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+tools:
+  read_secret:
+    capability: read:private
+    confidentiality: secret
+    integrity: trusted
+    risk_class: trusted_direct
+    returns_reference: "yes"
+""",
+    )
+
+    with pytest.raises(ConfigError, match="returns_reference"):
+        load_tool_metadata(path)
 
 
 @pytest.mark.parametrize(

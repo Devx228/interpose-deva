@@ -10,7 +10,7 @@ from capgate.engine.mediator import ToolCallMediator
 from capgate.engine.pipeline import DecisionPipeline, ToolMetadata
 from capgate.flow.sinks import SinkKind
 from capgate.policy import parse_policy
-from capgate.proxy.events import ToolCallEvent, ToolResultEvent
+from capgate.proxy.events import JsonValue, ToolCallEvent, ToolResultEvent
 from capgate.receipts.replay import replay_session
 from capgate.receipts.signer import Ed25519Signer, ReceiptWriter
 from capgate.receipts.store import JsonlReceiptStore
@@ -325,7 +325,9 @@ class FailingObservationPipeline(DecisionPipeline):
         context: AgentContext,
         call_event: ToolCallEvent,
         result_event: ToolResultEvent,
-    ) -> None:
+        *,
+        payload: JsonValue | None = None,
+    ) -> str | None:
         raise RuntimeError("PRIVATE_PROVENANCE_DETAIL")
 
 

@@ -21,7 +21,7 @@ _DENY_KEYS = frozenset({"from", "to"})
 _REQUIRED_TOOL_KEYS = frozenset(
     {"capability", "confidentiality", "integrity", "risk_class"}
 )
-_OPTIONAL_TOOL_KEYS = frozenset({"source_tags", "sink"})
+_OPTIONAL_TOOL_KEYS = frozenset({"source_tags", "sink", "returns_reference"})
 _TOOL_KEYS = _REQUIRED_TOOL_KEYS | _OPTIONAL_TOOL_KEYS
 
 
@@ -138,6 +138,10 @@ def _parse_tool_metadata(raw: object) -> ToolMetadata:
     ):
         raise ConfigError("tool metadata scalar fields must be strings")
 
+    returns_reference_raw = data.get("returns_reference", False)
+    if not isinstance(returns_reference_raw, bool):
+        raise ConfigError("tool metadata returns_reference must be a boolean")
+
     source_tags_raw = data.get("source_tags", [])
     if not isinstance(source_tags_raw, list) or any(
         not isinstance(tag, str) for tag in source_tags_raw
@@ -172,4 +176,5 @@ def _parse_tool_metadata(raw: object) -> ToolMetadata:
         risk_class=risk_class,
         sink=sink,
         capability=capability,
+        returns_reference=returns_reference_raw,
     )

@@ -24,10 +24,12 @@ This module is pure bookkeeping: it makes no decisions and changes no verdicts o
 
 from __future__ import annotations
 
+import re
 import secrets
 from dataclasses import dataclass
 
 from capgate.taint.labels import Label
+from capgate.taint.propagation import join_labels
 
 #: Prefix identifying a CapGate value reference. Deliberately distinctive so it cannot be
 #: confused with ordinary tool output.
@@ -36,6 +38,10 @@ REFERENCE_PREFIX = "capgate-ref:"
 _TOKEN_BYTES = 16
 _DEFAULT_CAPACITY = 4096
 
+#: Exact shape of a minted token. Matching this proves nothing — only resolution against a
+#: store does — but it lets embedded tokens be located inside composed text.
+_REFERENCE_PATTERN = re.compile(re.escape(REFERENCE_PREFIX) + rf"[0-9a-f]{{{_TOKEN_BYTES * 2}}}")
+
 
 @dataclass(frozen=True, slots=True)
 class StoredValue:
@@ -43,6 +49,7 @@ class StoredValue:
 
     reference: str
     label: Label
+    value: object
 
 
 def is_reference(candidate: object) -> bool:
@@ -68,17 +75,18 @@ class ValueStore:
         if capacity <= 0:
             raise ValueError("capacity must be positive")
         self._capacity = capacity
-        self._labels: dict[str, Label] = {}
+        self._entries: dict[str, StoredValue] = {}
 
-    def store(self, label: Label) -> StoredValue:
+    def store(self, label: Label, value: object) -> StoredValue:
         """Mint a fresh reference for a labelled value."""
 
         reference = f"{REFERENCE_PREFIX}{secrets.token_hex(_TOKEN_BYTES)}"
-        if len(self._labels) >= self._capacity:
-            oldest = next(iter(self._labels))
-            del self._labels[oldest]
-        self._labels[reference] = label
-        return StoredValue(reference=reference, label=label)
+        if len(self._entries) >= self._capacity:
+            oldest = next(iter(self._entries))
+            del self._entries[oldest]
+        entry = StoredValue(reference=reference, label=label, value=value)
+        self._entries[reference] = entry
+        return entry
 
     def resolve(self, reference: object) -> Label | None:
         """Return the label a reference names, or `None` when it names nothing.
@@ -87,13 +95,111 @@ class ValueStore:
         never means *untainted*.
         """
 
+        entry = self.resolve_entry(reference)
+        return entry.label if entry is not None else None
+
+    def resolve_entry(self, reference: object) -> StoredValue | None:
+        """Return the full stored entry a reference names, or `None` for unknown tokens."""
+
         if not is_reference(reference):
             return None
         assert isinstance(reference, str)
-        return self._labels.get(reference)
+        return self._entries.get(reference)
 
     def __len__(self) -> int:
-        return len(self._labels)
+        return len(self._entries)
 
     def __contains__(self, reference: object) -> bool:
-        return self.resolve(reference) is not None
+        return self.resolve_entry(reference) is not None
+
+
+@dataclass(frozen=True, slots=True)
+class ArgumentResolution:
+    """One argument after reference resolution.
+
+    ``labels`` holds the exact label of every reference that actually resolved. It is the
+    *addition* lineage proves, never a replacement for the caller's fallback: a partially
+    composed argument (free text around a token) must still join the pessimistic session
+    label, so callers always join these labels *into* their fallback rather than instead
+    of it.
+    """
+
+    value: object
+    labels: tuple[Label, ...]
+    substituted: bool
+
+    def joined_label(self, fallback: Label) -> Label:
+        return join_labels((fallback, *self.labels))
+
+
+def resolve_argument(
+    value: object,
+    store: ValueStore,
+    *,
+    max_depth: int = 8,
+    max_nodes: int = 256,
+) -> ArgumentResolution:
+    """Substitute resolvable references inside one argument value.
+
+    A string that *is* a minted token becomes the stored value with its exact type. A
+    token embedded in composed text is substituted only when the stored value is itself a
+    string. Containers are walked to a bounded depth and node count; anything beyond the
+    budget is left untouched, which fails in the safe direction — an unsubstituted token
+    stays an opaque string that names nothing downstream.
+
+    Tokens that resolve to nothing (attacker-planted, evicted, or foreign) are left
+    exactly as they are. They carry no stored value, so there is nothing to substitute
+    and nothing to label; the caller's pessimistic fallback covers them.
+    """
+
+    budget = [max_nodes]
+    labels: list[Label] = []
+    resolved = _resolve(value, store, labels, budget, max_depth)
+    return ArgumentResolution(
+        value=resolved,
+        labels=tuple(labels),
+        substituted=resolved is not value,
+    )
+
+
+def _resolve(
+    value: object,
+    store: ValueStore,
+    labels: list[Label],
+    budget: list[int],
+    depth: int,
+) -> object:
+    if budget[0] <= 0 or depth < 0:
+        return value
+    budget[0] -= 1
+    if isinstance(value, str):
+        return _resolve_string(value, store, labels)
+    if isinstance(value, list):
+        items = [_resolve(item, store, labels, budget, depth - 1) for item in value]
+        changed = any(new is not old for new, old in zip(items, value, strict=True))
+        return items if changed else value
+    if isinstance(value, dict):
+        entries = {
+            key: _resolve(item, store, labels, budget, depth - 1)
+            for key, item in value.items()
+        }
+        changed = any(entries[key] is not value[key] for key in value)
+        return entries if changed else value
+    return value
+
+
+def _resolve_string(value: str, store: ValueStore, labels: list[Label]) -> object:
+    entry = store.resolve_entry(value)
+    if entry is not None:
+        labels.append(entry.label)
+        return entry.value
+
+    def _substitute(match: re.Match[str]) -> str:
+        embedded = store.resolve_entry(match.group(0))
+        if embedded is None or not isinstance(embedded.value, str):
+            return match.group(0)
+        labels.append(embedded.label)
+        return embedded.value
+
+    substituted = _REFERENCE_PATTERN.sub(_substitute, value)
+    return substituted if substituted != value else value

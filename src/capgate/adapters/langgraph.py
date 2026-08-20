@@ -131,6 +131,23 @@ def build_secure_tool_node(
             argument_labels = dict(label_arguments(request, deepcopy(call.args)))
         except Exception:
             raise ValueError("CapGate argument labeling failed closed") from None
+        resolved = mediator.resolve_arguments(call.args)
+        if resolved.substituted:
+            resolved_args = resolved.arguments
+            if request.tool is not None:
+                # Substitution changes values, so the schema contract is re-checked on
+                # what will actually execute. A stored value that does not fit the
+                # schema fails closed here, before anything runs.
+                resolved_args = _validated_tool_arguments(request.tool, resolved_args)
+            call = LangGraphToolCall(
+                name=call.name,
+                args=resolved_args,
+                call_id=call.call_id,
+            )
+        for name, reference_label in resolved.reference_labels.items():
+            # Exact lineage only ever adds to the declared label, never replaces it: a
+            # partially composed argument keeps its pessimistic base.
+            argument_labels[name] = argument_labels[name].join(reference_label)
         event = to_tool_call_event(
             call,
             session_id=session_id,
@@ -155,10 +172,20 @@ def build_secure_tool_node(
             ),
             argument_labels=argument_labels,
             approve=approve,
+            result_payload=_langgraph_result_payload,
         )
         if outcome.decision.verdict == "ALLOW":
             if outcome.value is None:
                 raise RuntimeError("CapGate allowed a tool call without a result")
+            if outcome.reference is not None:
+                # Reference-returning tool: the planner receives the opaque token. The
+                # raw result was recorded (as a hash) in the signed receipt and stored
+                # for later resolution; it must not enter the model's context.
+                return ToolMessage(
+                    content=outcome.reference,
+                    name=call.name,
+                    tool_call_id=call.call_id,
+                )
             return outcome.value
         return ToolMessage(
             content="CapGate rejected this tool-call outcome.",
@@ -214,6 +241,20 @@ def _langgraph_result_to_json(
     if result.name is not None and result.name != expected_name:
         raise ValueError("LangGraph ToolMessage name does not match the audited tool")
     return _json_value(result.model_dump(mode="json"))
+
+
+def _langgraph_result_payload(result: ToolMessage | Command[Any]) -> JsonValue:
+    """Project the planner-visible content of a result for reference storage.
+
+    Only the content is stored behind a reference — it is what a later argument would
+    pass through. The full message envelope stays in the receipt hash as usual.
+    """
+
+    from langchain_core.messages import ToolMessage
+
+    if not isinstance(result, ToolMessage):
+        raise ValueError("LangGraph Command results are not supported by CapGate v0.1")
+    return _json_value(result.content)
 
 
 def _argument_provenance(call: LangGraphToolCall, server: str) -> dict[str, str]:
